@@ -1,22 +1,22 @@
-# Unreal Engine
-Binaries/
-DerivedDataCache/
-Intermediate/
-Saved/
-Build/
-.vs/
+# Node / Bun
+node_modules/
+dist/
+.tsbuild/
+*.tsbuildinfo
+.vite/
+apps/web/test-results/
+apps/web/playwright-report/
+
+# 編輯器
 .vscode/
 .idea/
-*.sln
-*.suo
-*.opensdf
-*.sdf
-*.VC.db
-*.VC.opendb
-*.xcworkspace
-Plugins/*/Binaries/
-Plugins/*/Intermediate/
 
 # Blender
 *.blend1
 *.blend2
+
+# 舊版 Unreal Engine 產物（legacy/ue5）
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
