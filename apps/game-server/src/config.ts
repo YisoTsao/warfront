@@ -16,6 +16,8 @@ export const config = {
   /** 允許連線的網頁來源（逗號分隔）；未設定時允許任何來源（開發用） */
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   reconnectSeconds: Number(process.env.RECONNECT_SECONDS ?? 30),
+  /** 每個 IP 每 10 秒最多加入幾次（負載測試從同一台機器連線時需要調高） */
+  joinRateLimit: Number(process.env.JOIN_RATE_LIMIT ?? 12),
   /** 測試用：縮短暖身與結算時間 */
   warmupSeconds: process.env.WARMUP_SECONDS ? Number(process.env.WARMUP_SECONDS) : undefined,
   resultSeconds: process.env.RESULT_SECONDS ? Number(process.env.RESULT_SECONDS) : undefined,

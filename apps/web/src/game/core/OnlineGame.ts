@@ -58,6 +58,10 @@ export class OnlineGame extends GameBase {
   private rtt = 0;
   private pingTimer = 0;
   private corrections = 0;
+  /** 已經比對過的最後一個 ack；ack 沒有前進時快照沒有新資訊，不需要修正 */
+  private lastAck = -1;
+  /** 除錯：最近幾次預測修正的細節 */
+  private readonly correctionLog: Array<Record<string, unknown>> = [];
   private killFeed: KillFeedEntry[] = [];
   private killFeedId = 0;
   private damageSerial = 0;
@@ -434,10 +438,15 @@ export class OnlineGame extends GameBase {
     this.pending = [];
     this.spawnedLocally = true;
     this.deathAt = 0;
+    this.lastAck = -1;
   }
 
   /** 預測修正：比對伺服器在 ack 時的狀態與本機當時的預測，差太多就回到伺服器狀態並重播。 */
   private reconcile(ack: number, server: CharacterState, weapons: SnapshotMessage['self'] extends infer S ? (S extends { weapons: infer W } ? W : never) : never, serverSlot: number): void {
+    if (ack <= this.lastAck) {
+      return;
+    }
+    this.lastAck = ack;
     while (this.pending.length > 0 && this.pending[0]!.seq < ack) {
       this.pending.shift();
     }
@@ -450,6 +459,17 @@ export class OnlineGame extends GameBase {
         this.player.setStateKeepingRender(server);
       } else {
         this.corrections++;
+        if (predicted) {
+          this.correctionLog.push({
+            ack,
+            error: Math.round(error * 1000) / 1000,
+            predicted: { feet: predicted.feet, v: predicted.velocity, g: predicted.grounded, st: predicted.stance },
+            server: { feet: server.feet, v: server.velocity, g: server.grounded, st: server.stance },
+          });
+          if (this.correctionLog.length > 8) {
+            this.correctionLog.shift();
+          }
+        }
         this.player.body.setState(server);
         for (const p of this.pending) {
           this.player.body.step(characterInputFrom(p.frame), p.frame.y, 1 / TICK_RATE);
@@ -662,6 +682,7 @@ export class OnlineGame extends GameBase {
       spawned: this.spawnedLocally,
       pending: this.pending.length,
       corrections: this.corrections,
+      correctionLog: this.correctionLog,
       rtt: Math.round(this.rtt),
       remotes: this.remotes.count,
       remotePositions: this.remotes.positions(),

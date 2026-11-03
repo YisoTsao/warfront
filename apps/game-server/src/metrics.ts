@@ -30,6 +30,7 @@ const totals = {
   matchesCompleted: 0,
   roomErrors: 0,
   joinsRejected: 0,
+  clientErrors: 0,
 };
 
 const WINDOW = 300;
@@ -120,6 +121,7 @@ export const metrics = {
       `frontline_disconnects_total ${r.totals.disconnects}`,
       `frontline_matches_completed_total ${r.totals.matchesCompleted}`,
       `frontline_room_errors_total ${r.totals.roomErrors}`,
+      `frontline_client_errors_total ${r.totals.clientErrors}`,
     ];
     for (const room of r.rooms) {
       const labels = `{room="${room.roomId}",mode="${room.mode}",map="${room.mapId}"}`;

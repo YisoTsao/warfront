@@ -675,7 +675,7 @@ select {
 .minimap {
   position: absolute;
   left: 16px;
-  top: 16px;
+  bottom: 64px;
   width: 180px;
   height: 180px;
   border-radius: 50%;

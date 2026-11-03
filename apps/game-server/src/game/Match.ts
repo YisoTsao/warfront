@@ -81,6 +81,10 @@ const REVIVE_RANGE = 2.2;
 const ASSIST_WINDOW = 10;
 const ASSIST_MIN_DAMAGE = 20;
 const GIVE_UP_SECONDS = 1;
+/** 每個玩家每 tick 增加 1 個輸入處理額度，最多累積 8 個（處理網路抖動造成的成批輸入） */
+const INPUT_BUDGET_MAX = 8;
+/** 超過這麼多 tick 沒有輸入，才以閒置輸入推進（例如分頁被隱藏） */
+const STARVATION_TICKS = 15;
 
 /**
  * 一場對戰的權威遊戲邏輯，不依賴 Colyseus（可直接單元測試）。
@@ -341,10 +345,28 @@ export class Match {
       if (!player.connected) {
         continue;
       }
-      const { frame } = player.inputs.next();
-      player.lastFrame = frame;
-      if (player.spawned) {
-        this.stepPlayer(player, frame, now, dt);
+      // 每個輸入框只處理一次、依序處理：與客戶端預測完全一致。
+      // 額度每 tick 補 1，送得比 30 Hz 快的客戶端不會被處理得更快（防加速）。
+      player.inputBudget = Math.min(INPUT_BUDGET_MAX, player.inputBudget + 1);
+      let processed = 0;
+      while (player.inputBudget >= 1 && player.inputs.pending > 0) {
+        const frame = player.inputs.take()!;
+        player.inputBudget--;
+        processed++;
+        player.lastFrame = frame;
+        if (player.spawned) {
+          this.stepPlayer(player, frame, now, dt);
+        }
+      }
+      if (processed === 0) {
+        player.starvedTicks++;
+        if (player.starvedTicks > STARVATION_TICKS && player.spawned) {
+          const idle = player.inputs.next().frame;
+          player.lastFrame = idle;
+          this.stepPlayer(player, idle, now, dt);
+        }
+      } else {
+        player.starvedTicks = 0;
       }
       if (!player.bot && player.inputs.overflow > 30) {
         player.suspicious++;

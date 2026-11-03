@@ -124,6 +124,39 @@ describe('Match：權威移動與輸入驗證', () => {
   });
 });
 
+describe('Match：輸入處理額度', () => {
+  it('成批到達的輸入會在同一個 tick 補處理，每個輸入只處理一次', () => {
+    const match = createMatch();
+    const a = join(match, 'a');
+    run(match, 20);
+    const d = new Driver(match, a);
+    for (let i = 0; i < 5; i++) {
+      d.send({ f: 1 });
+    }
+    match.step();
+    expect(a.inputs.pending).toBe(0);
+    expect(a.inputs.ack).toBe(5);
+  });
+
+  it('送得比 30 Hz 快的客戶端不會被處理得更快', () => {
+    const match = createMatch();
+    const a = join(match, 'a');
+    run(match, 20);
+    const d = new Driver(match, a);
+    const clockBefore = a.weaponClock;
+    for (let t = 0; t < 60; t++) {
+      d.send({ f: 1 });
+      d.send({ f: 1 });
+      match.step();
+    }
+    // 武器時鐘每處理一個輸入推進一個 tick：60 個 tick 內最多處理 60 + 額度上限 8 個
+    const processed = Math.round((a.weaponClock - clockBefore) * TICK_RATE);
+    expect(processed).toBeLessThanOrEqual(68);
+    expect(processed).toBeGreaterThanOrEqual(60);
+    expect(a.inputs.overflow).toBeGreaterThan(0);
+  });
+});
+
 describe('Match：開火、命中與計分', () => {
   function duel() {
     const match = createMatch({ modeOverrides: { scoreLimit: 2 } });

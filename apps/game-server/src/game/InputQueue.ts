@@ -33,7 +33,19 @@ export class InputQueue {
     return true;
   }
 
-  /** 取下一個要處理的輸入框。 */
+  /** 取出下一個收到的輸入框（沒有則回傳 null，不重複舊的）。 */
+  take(): InputFrame | null {
+    const frame = this.queue.shift();
+    if (!frame) {
+      return null;
+    }
+    this.last = frame;
+    this.lastSeq = frame.s;
+    this.starved = 0;
+    return frame;
+  }
+
+  /** 取下一個要處理的輸入框（沒有新輸入時重複上一個）。 */
   next(): { frame: InputFrame; fresh: boolean } {
     const frame = this.queue.shift();
     if (frame) {

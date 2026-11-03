@@ -11,7 +11,7 @@ import { JsonlResultReporter } from '../persistence/ResultReporter';
 import { JoinLimiter, TokenBucket } from './RateLimiter';
 import { DebugSchema, DeploySchema, InputMessageSchema, JoinOptionsSchema, LoadoutSchema, PingSchema, TeamSchema } from './schemas';
 
-const joinLimiter = new JoinLimiter(12, 10_000);
+const joinLimiter = new JoinLimiter(config.joinRateLimit, 10_000);
 
 /** zod 的選填欄位是 `T | undefined`，轉成沒有 undefined 值的 Partial<Loadout>。 */
 function toLoadout(input: { classId: string; primaryId?: string | undefined; secondaryId?: string | undefined; attachments?: Record<string, string[]> | undefined }): Partial<Loadout> {

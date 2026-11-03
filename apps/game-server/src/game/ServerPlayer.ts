@@ -27,6 +27,9 @@ export class ServerPlayer {
   slot = 0;
   /** 武器狀態機的時間軸：每處理一個輸入框推進一個 tick */
   weaponClock = 0;
+  /** 輸入處理額度（見 Match.step） */
+  inputBudget = 1;
+  starvedTicks = 0;
   grenades = 0;
   lastThrowAt = -100;
   abilityReadyAt = 0;

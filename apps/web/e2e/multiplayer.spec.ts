@@ -88,9 +88,13 @@ test('兩個瀏覽器加入同一場、看到彼此移動、開火由伺服器�
   await placeAt(b.page, 0, 8, Math.PI);
 
   // 乙往前走，甲看到的位置跟著改變（插值後與乙自己的位置一致）
+  const correctionsBefore = (await net(b.page)).corrections as number;
   await b.page.keyboard.down('KeyD');
   await b.page.waitForTimeout(1200);
   await b.page.keyboard.up('KeyD');
+  await b.page.waitForTimeout(500);
+  // 客戶端預測與伺服器一致：一般移動不需要修正
+  expect(((await net(b.page)).corrections as number) - correctionsBefore).toBeLessThanOrEqual(1);
   const bFeet = await b.page.evaluate(() => window.__frontline!.snapshot().feet);
   await expect
     .poll(async () => {
