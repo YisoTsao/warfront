@@ -12,6 +12,9 @@ export class Renderer {
   private contextLost = false;
   private renderScale = 1;
   private maxPixelRatio = 2;
+  private readonly postScene = new THREE.Scene();
+  private readonly postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private postEnabled = false;
 
   constructor(
     private readonly container: HTMLElement,
@@ -39,6 +42,21 @@ export class Renderer {
 
     this.renderer.domElement.addEventListener('webglcontextlost', this.handleContextLost);
     this.renderer.domElement.addEventListener('webglcontextrestored', this.handleContextRestored);
+
+    // 後處理（暈影）：一個全螢幕四邊形，成本很低
+    const vignette = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader:
+          'varying vec2 vUv; void main() { vec2 d = vUv - 0.5; float v = smoothstep(0.35, 0.85, length(d) * 1.25); gl_FragColor = vec4(0.02, 0.02, 0.015, v * 0.55); }',
+      }),
+    );
+    vignette.frustumCulled = false;
+    this.postScene.add(vignette);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -76,6 +94,10 @@ export class Renderer {
     return this.renderScale;
   }
 
+  setPostProcessing(enabled: boolean): void {
+    this.postEnabled = enabled;
+  }
+
   setShadowsEnabled(enabled: boolean): void {
     if (this.renderer.shadowMap.enabled !== enabled) {
       this.renderer.shadowMap.enabled = enabled;
@@ -104,6 +126,9 @@ export class Renderer {
       const fog = this.overlayScene.fog;
       this.renderer.render(this.overlayScene, this.camera);
       this.overlayScene.fog = fog;
+    }
+    if (this.postEnabled) {
+      this.renderer.render(this.postScene, this.postCamera);
     }
   }
 

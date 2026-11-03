@@ -26,6 +26,7 @@ interface LodGroup {
 
 export interface StreamingStats {
   loaded: number;
+  loadedIds: string[];
   loading: number;
   total: number;
   failed: number;
@@ -104,6 +105,7 @@ export class ChunkStreamer {
     const loaded = this.entries.filter((e) => e.state === 'loaded');
     return {
       loaded: loaded.length,
+      loadedIds: loaded.map((e) => e.chunk.id).sort(),
       loading: this.entries.filter((e) => e.state === 'loading').length,
       failed: this.entries.filter((e) => e.state === 'failed').length,
       total: this.entries.length,

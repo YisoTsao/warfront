@@ -253,7 +253,8 @@ test('3D 渲染迴圈不會造成 React 持續重新渲染', async ({ page }) =>
   await page.evaluate(() => {
     const w = window as unknown as { __mutations: number };
     w.__mutations = 0;
-    const direct = [document.querySelector('.diagnostics'), document.querySelector('.crosshair-dynamic')];
+    // 效能面板、準星與 3D 畫布（動態解析度會調整畫布尺寸）由遊戲迴圈直接管理
+    const direct = [document.querySelector('.diagnostics'), document.querySelector('.crosshair-dynamic'), document.querySelector('.game-container'), document.querySelector('.minimap')];
     new MutationObserver((records) => {
       for (const record of records) {
         // 效能面板與準星由遊戲迴圈直接寫入 DOM，不經過 React，不列入計算。

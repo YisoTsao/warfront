@@ -51,7 +51,7 @@ export class WeaponController {
   playerNumber: number;
 
   constructor(
-    readonly arsenal: LocalArsenal,
+    public arsenal: LocalArsenal,
     private readonly viewmodel: Viewmodel,
     private readonly cameraRig: CameraRig,
     private readonly effects: Effects,
@@ -64,6 +64,13 @@ export class WeaponController {
     this.matchSeed = options.matchSeed;
     this.playerNumber = options.playerNumber;
     this.viewmodel.setWeapon(arsenal.current.def);
+  }
+
+  /** 重生時換成新的配裝。 */
+  replaceArsenal(arsenal: LocalArsenal): void {
+    this.arsenal = arsenal;
+    this.viewmodel.setWeapon(arsenal.current.def);
+    this.pushHud();
   }
 
   setResolver(resolver: PelletResolver): void {

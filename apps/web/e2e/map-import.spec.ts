@@ -48,17 +48,24 @@ test('碰撞：房屋牆壁擋人、門口可以進出、鐵絲網擋人', async
 });
 
 test('串流：移動到地圖另一端時載入附近分塊、卸載遠處分塊', async ({ page }) => {
+  // 植被品質「低」：串流距離最短，方便觀察分塊載入與卸載
+  await page.addInitScript(() => {
+    window.localStorage.setItem('frontline.settings.v1', JSON.stringify({ foliageQuality: 'low', graphicsPreset: 'low' }));
+  });
   await openGame(page, 'sample-valley');
   await startPlaying(page);
-  const before = await snapshot(page);
-  await teleportToGround(page, -80, -80, 0);
+  const before = (await snapshot(page)).streaming!;
+  await teleportToGround(page, 80, -80, 0);
+  await expect.poll(() => snapshot(page).then((s) => s.streaming!.loading), { timeout: 30_000 }).toBe(0);
   await expect
-    .poll(() => snapshot(page).then((s) => s.streaming!.loading), { timeout: 30_000 })
-    .toBe(0);
-  const after = await snapshot(page);
-  expect(after.streaming!.failed).toBe(0);
-  // 位置改變後，至少有不同的細節分塊被載入（總載入位元組增加）
-  expect(after.streaming!.bytesLoaded).toBeGreaterThan(before.streaming!.bytesLoaded);
+    .poll(async () => {
+      const after = (await snapshot(page)).streaming!;
+      const added = after.loadedIds.filter((id) => !before.loadedIds.includes(id));
+      const removed = before.loadedIds.filter((id) => !after.loadedIds.includes(id));
+      return added.length > 0 && removed.length > 0;
+    }, { timeout: 30_000 })
+    .toBe(true);
+  expect((await snapshot(page)).streaming!.failed).toBe(0);
 });
 
 test('地形上可以走動與爬坡，不會掉出地圖', async ({ page }) => {

@@ -7,3 +7,4 @@ export * from './ballistics';
 export * from './WeaponState';
 export * from './maps';
 export * from './water';
+export * from './frames';

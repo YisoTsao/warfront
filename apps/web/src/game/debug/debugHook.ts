@@ -49,8 +49,13 @@ export interface FrontlineDebugHook {
   combat(): Record<string, number>;
   hud(): HudState;
   audioRunning(): boolean;
+  quality(): { preset: string; renderScale: number; dynamicFactor: number; shadows: string; postProcessing: boolean };
   /** 連線狀態（只有線上模式） */
   net?: () => Record<string, unknown>;
+  devTeleport?: (x: number, y: number, z: number) => void;
+  devSkipWarmup?: () => void;
+  simulateDrop?: () => void;
+  leave?: () => Promise<void>;
 }
 
 declare global {

@@ -5,7 +5,9 @@ import { loadSettings, loadStoredBindings, sanitizeSettings, saveBindings, saveS
 import { sanitizeBindings, type KeyBindings } from '../game/input/keyBindings';
 import { CompatibilityNotice } from '../ui/CompatibilityNotice';
 import { MainMenu, type MenuChoice } from '../ui/MainMenu';
+import { ServerList } from '../ui/ServerList';
 import { SettingsPanel } from '../ui/SettingsPanel';
+import { MatchView, type MatchRequest } from './MatchView';
 import { loadProfile, saveProfile, type GuestProfile } from './profile';
 import { TrainingView } from './TrainingView';
 
@@ -13,7 +15,7 @@ type Screen =
   | { kind: 'menu' }
   | { kind: 'settings' }
   | { kind: 'training'; mapId: string; loadout: Partial<Loadout> }
-  | { kind: 'match'; mode: 'tdm' | 'conquest'; roomId?: string }
+  | { kind: 'match'; request: MatchRequest }
   | { kind: 'servers' };
 
 /** 網址參數：?map=xxx 直接進入訓練場（開發與自動化測試使用）。 */
@@ -25,7 +27,17 @@ function initialScreen(): Screen {
   }
   const mode = params.get('match');
   if (mode === 'tdm' || mode === 'conquest') {
-    return { kind: 'match', mode };
+    const bots = params.get('bots');
+    return {
+      kind: 'match',
+      request: {
+        mode,
+        ...(params.get('matchMap') ? { mapId: params.get('matchMap')! } : {}),
+        ...(bots !== null ? { bots: Number(bots) } : {}),
+        ...(params.get('scoreLimit') ? { scoreLimit: Number(params.get('scoreLimit')) } : {}),
+        ...(params.get('timeLimit') ? { timeLimit: Number(params.get('timeLimit')) } : {}),
+      },
+    };
   }
   return { kind: 'menu' };
 }
@@ -34,7 +46,14 @@ export function App() {
   const [compatibility] = useState(checkCompatibility);
   const [settings, setSettings] = useState<GameSettings>(loadSettings);
   const [bindings, setBindings] = useState<KeyBindings>(() => sanitizeBindings(loadStoredBindings()));
-  const [profile, setProfile] = useState<GuestProfile>(loadProfile);
+  const [profile, setProfile] = useState<GuestProfile>(() => {
+    const loaded = loadProfile();
+    // 測試與多分頁：?guest= 與 ?name= 可以覆寫訪客身分
+    const params = new URLSearchParams(window.location.search);
+    const guest = params.get('guest');
+    const name = params.get('name');
+    return { guestId: guest ?? loaded.guestId, name: name ?? loaded.name };
+  });
   const [screen, setScreen] = useState<Screen>(initialScreen);
 
   const updateSettings = useCallback((next: GameSettings) => {
@@ -65,6 +84,20 @@ export function App() {
           onLeave={toMenu}
         />
       );
+    case 'match':
+      return (
+        <MatchView
+          request={screen.request}
+          profile={profile}
+          settings={settings}
+          bindings={bindings}
+          onSettingsChange={updateSettings}
+          onBindingsChange={updateBindings}
+          onLeave={toMenu}
+        />
+      );
+    case 'servers':
+      return <ServerList onBack={toMenu} onJoin={(room) => setScreen({ kind: 'match', request: { mode: room.mode, roomId: room.roomId, ...(room.mapId ? { mapId: room.mapId } : {}) } })} />;
     case 'settings':
       return (
         <div className="overlay overlay--solid">
@@ -90,7 +123,7 @@ export function App() {
             if (choice.kind === 'training') {
               setScreen({ kind: 'training', mapId: choice.mapId, loadout: choice.loadout });
             } else if (choice.kind === 'quickMatch') {
-              setScreen({ kind: 'match', mode: choice.mode });
+              setScreen({ kind: 'match', request: { mode: choice.mode, mapId: choice.mapId, bots: choice.bots } });
             } else if (choice.kind === 'serverList') {
               setScreen({ kind: 'servers' });
             } else {

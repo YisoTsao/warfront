@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": ".tsbuild",
+    "rootDir": "src",
+    "tsBuildInfoFile": ".tsbuild/tsconfig.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/map-schema" },
+    { "path": "../../packages/game-config" },
+    { "path": "../../packages/simulation" }
+  ]
+}

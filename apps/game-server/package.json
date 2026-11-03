@@ -7,7 +7,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "build": "bun build src/index.ts --target=node --outdir dist --format esm",
-    "serve": "node dist/index.js"
+    "serve": "node dist/index.js",
+    "load-test": "tsx scripts/load-test.ts"
   },
   "dependencies": {
     "@colyseus/core": "0.18.25",
@@ -16,7 +17,8 @@
     "@frontline/game-config": "workspace:*",
     "@frontline/map-schema": "workspace:*",
     "@frontline/shared": "workspace:*",
-    "@frontline/simulation": "workspace:*"
+    "@frontline/simulation": "workspace:*",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

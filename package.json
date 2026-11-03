@@ -8,7 +8,7 @@
     "tools/*"
   ],
   "scripts": {
-    "dev": "bun run --cwd apps/web dev",
+    "dev": "bun run --filter '@frontline/web' --filter '@frontline/game-server' dev",
     "build": "bun run --cwd apps/web build",
     "preview": "bun run --cwd apps/web preview",
     "typecheck": "tsc -b",
@@ -17,7 +17,12 @@
     "e2e": "bun run maps:sample && bun run --cwd apps/web e2e",
     "check": "bun run typecheck && bun run lint && bun run test",
     "maps:build": "bun run --cwd tools/map-build build-map",
-    "maps:sample": "bun run --cwd tools/map-build sample && bun run --cwd tools/map-build build-map --input ../../assets/blender-source/exports/sample-valley.glb --id sample-valley --name 範例谷地"
+    "maps:sample": "bun run --cwd tools/map-build sample && bun run --cwd tools/map-build build-map --input ../../assets/blender-source/exports/sample-valley.glb --id sample-valley --name 範例谷地",
+    "dev:web": "bun run --cwd apps/web dev",
+    "dev:server": "bun run --cwd apps/game-server dev",
+    "server": "bun run --cwd apps/game-server start",
+    "build:server": "bun run --cwd apps/game-server build",
+    "load-test": "bun run --cwd apps/game-server load-test"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

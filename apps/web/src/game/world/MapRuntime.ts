@@ -41,6 +41,7 @@ export class MapRuntime {
     shadows: { cast: boolean },
     focus: THREE.Vector3 | null,
     onProgress?: (p: MapLoadProgress) => void,
+    streamScale = 1,
   ): Promise<MapRuntime> {
     onProgress?.({ stage: 'manifest', done: 0, total: 1 });
     const data = await loadMapData(mapId, '/maps', async (url) => {
@@ -59,6 +60,7 @@ export class MapRuntime {
       graybox = buildGrayboxVisuals(GRAYBOX_LAYOUT, scene);
     } else {
       streamer = new ChunkStreamer(data.manifest, data.baseUrl, scene, renderer, shadows);
+      streamer.distanceScale = streamScale;
       const start = focus ?? new THREE.Vector3(...(data.manifest.spawns[0]?.position ?? [0, 0, 0]));
       await streamer.preload(start, (done, total) => onProgress?.({ stage: 'chunks', done, total }));
     }

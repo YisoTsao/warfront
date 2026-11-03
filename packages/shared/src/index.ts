@@ -4,3 +4,4 @@ export * from './math/random';
 export * from './movement/constants';
 export * from './movement/movement';
 export * from './net/constants';
+export * from './net/protocol';
