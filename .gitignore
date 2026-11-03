@@ -20,3 +20,7 @@ Binaries/
 DerivedDataCache/
 Intermediate/
 Saved/
+
+# 範例地圖是由腳本產生的（bun run maps:sample），不進版控
+assets/blender-source/exports/sample-valley.glb
+assets/maps/sample-valley/

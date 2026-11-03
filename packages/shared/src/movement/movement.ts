@@ -1,5 +1,5 @@
 import { clamp, length2, moveTowards, type Vec2 } from '../math/vector';
-import { MOVEMENT, type Stance } from './constants';
+import { MOVEMENT, STANCES_BY_HEIGHT, type Stance } from './constants';
 
 /** 一個模擬步驟的移動輸入。軸向值介於 -1 到 1。 */
 export interface MoveInput {
@@ -48,11 +48,16 @@ export function canSprint(input: MoveInput, stance: Stance): boolean {
   return input.forward / magnitude >= MOVEMENT.sprintForwardDot;
 }
 
-export function targetSpeed(stance: Stance, sprinting: boolean): number {
-  if (stance === 'crouching') {
-    return MOVEMENT.crouchSpeed;
+export function targetSpeed(stance: Stance, sprinting: boolean, aiming = false): number {
+  let speed: number;
+  if (stance === 'prone') {
+    speed = MOVEMENT.proneSpeed;
+  } else if (stance === 'crouching') {
+    speed = MOVEMENT.crouchSpeed;
+  } else {
+    speed = sprinting && !aiming ? MOVEMENT.sprintSpeed : MOVEMENT.walkSpeed;
   }
-  return sprinting ? MOVEMENT.sprintSpeed : MOVEMENT.walkSpeed;
+  return aiming ? speed * MOVEMENT.aimSpeedMultiplier : speed;
 }
 
 /**
@@ -105,12 +110,29 @@ export function stepVerticalVelocity(
   return { velocityY: next, jumped: false };
 }
 
-/** 想站起來但頭頂空間不足時維持蹲姿。 */
-export function resolveStance(wantsCrouch: boolean, canStand: boolean): Stance {
-  if (wantsCrouch) {
-    return 'crouching';
+/**
+ * 決定這一步的姿勢。往低處換一定成功；往高處換時，從想要的姿勢往下找第一個放得下的，
+ * 都放不下就維持目前姿勢（例如在低矮通道內想站起來）。
+ */
+export function resolveStance(current: Stance, desired: Stance, fits: (stance: Stance) => boolean): Stance {
+  const currentIndex = STANCES_BY_HEIGHT.indexOf(current);
+  const desiredIndex = STANCES_BY_HEIGHT.indexOf(desired);
+  if (desiredIndex <= currentIndex) {
+    return desired;
   }
-  return canStand ? 'standing' : 'crouching';
+  for (let i = desiredIndex; i > currentIndex; i--) {
+    const candidate = STANCES_BY_HEIGHT[i];
+    if (candidate && fits(candidate)) {
+      return candidate;
+    }
+  }
+  return current;
+}
+
+/** 姿勢按鍵：蹲下與臥倒都是切換；再按一次回到站姿。 */
+export function toggleStance(desired: Stance, pressed: 'crouch' | 'prone'): Stance {
+  const target: Stance = pressed === 'crouch' ? 'crouching' : 'prone';
+  return desired === target ? 'standing' : target;
 }
 
 export function resolveLocomotion(grounded: boolean, horizontalSpeed: number, sprinting: boolean): Locomotion {

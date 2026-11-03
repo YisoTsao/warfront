@@ -2,7 +2,7 @@ import { eyeHeight, type Stance } from '@frontline/shared';
 import type * as THREE from 'three';
 import type { GameSettings } from '../core/settings';
 import { horizontalToVerticalFov } from './fov';
-import type { Vec3 } from './PlayerController';
+import type { Vec3 } from '@frontline/shared';
 
 const BASE_RADIANS_PER_PIXEL = 0.0022;
 const PITCH_LIMIT = (89 * Math.PI) / 180;

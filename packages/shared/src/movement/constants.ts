@@ -8,7 +8,10 @@ export const MOVEMENT = {
   /** 公尺／秒 */
   walkSpeed: 3.6,
   crouchSpeed: 2.0,
+  proneSpeed: 0.9,
   sprintSpeed: 6.0,
+  /** 瞄準（ADS）時的速度倍率 */
+  aimSpeedMultiplier: 0.6,
   /** 公尺／秒² */
   groundAcceleration: 18,
   groundDeceleration: 18,
@@ -36,20 +39,33 @@ export const CAPSULE = {
   radius: 0.34,
   standingHalfHeight: 0.92,
   crouchingHalfHeight: 0.6,
+  /** 臥倒以低矮的球狀膠囊近似（高 0.68 m） */
+  proneHalfHeight: 0.35,
 } as const;
 
 /** 眼睛高度，從腳底算起（公尺）。 */
 export const EYE_HEIGHT = {
   standing: 1.64,
   crouching: 1.0,
+  prone: 0.42,
 } as const;
 
+export type Stance = 'standing' | 'crouching' | 'prone';
+
+/** 由低到高排列的姿勢 */
+export const STANCES_BY_HEIGHT: readonly Stance[] = ['prone', 'crouching', 'standing'];
+
 export function capsuleHalfHeight(stance: Stance): number {
-  return stance === 'crouching' ? CAPSULE.crouchingHalfHeight : CAPSULE.standingHalfHeight;
+  switch (stance) {
+    case 'prone':
+      return CAPSULE.proneHalfHeight;
+    case 'crouching':
+      return CAPSULE.crouchingHalfHeight;
+    default:
+      return CAPSULE.standingHalfHeight;
+  }
 }
 
 export function eyeHeight(stance: Stance): number {
-  return stance === 'crouching' ? EYE_HEIGHT.crouching : EYE_HEIGHT.standing;
+  return EYE_HEIGHT[stance];
 }
-
-export type Stance = 'standing' | 'crouching';

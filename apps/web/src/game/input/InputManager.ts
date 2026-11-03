@@ -1,14 +1,16 @@
-import type { MoveInput } from '@frontline/shared';
 import { DEFAULT_KEY_BINDINGS, axis, buildCodeLookup, type InputAction, type KeyBindings } from './keyBindings';
 
 /** 一個模擬步驟取用的輸入。 */
 export interface SimulationInput {
-  move: MoveInput;
-  /** 自上一個模擬步驟以來是否新按下跳躍 */
-  jumpPressed: boolean;
-  /** 自上一個模擬步驟以來是否按下蹲下切換 */
-  crouchToggled: boolean;
+  move: { forward: number; right: number; sprint: boolean };
+  /** 目前按住的動作 */
+  held: ReadonlySet<InputAction>;
+  /** 自上一個模擬步驟以來新按下的動作（每個只會被取用一次） */
+  pressed: ReadonlySet<InputAction>;
 }
+
+/** 介面（不經過 Pointer Lock）也要知道的按鍵狀態，例如計分板。 */
+export type UiActionListener = (action: InputAction, down: boolean) => void;
 
 /**
  * 收集鍵盤與滑鼠輸入。只有在 Pointer Lock 期間才接受遊戲輸入；
@@ -16,13 +18,13 @@ export interface SimulationInput {
  */
 export class InputManager {
   private readonly held = new Set<InputAction>();
+  private pressed = new Set<InputAction>();
   private lookup: Map<string, InputAction>;
   private lookDeltaX = 0;
   private lookDeltaY = 0;
-  private jumpLatched = false;
-  private crouchLatched = false;
   private locked = false;
   private readonly disposers: Array<() => void> = [];
+  uiListener: UiActionListener | null = null;
 
   constructor(
     private readonly target: HTMLElement,
@@ -35,12 +37,20 @@ export class InputManager {
     this.listen(window, 'keydown', this.handleKeyDown);
     this.listen(window, 'keyup', this.handleKeyUp);
     this.listen(document, 'mousemove', this.handleMouseMove);
+    this.listen(document, 'mousedown', this.handleMouseDown);
+    this.listen(document, 'mouseup', this.handleMouseUp);
+    this.listen(document, 'wheel', this.handleWheel, { passive: false });
+    this.listen(document, 'contextmenu', this.handleContextMenu);
     this.listen(window, 'blur', this.clear);
     this.listen(document, 'visibilitychange', this.handleVisibilityChange);
   }
 
   get isPointerLocked(): boolean {
     return this.locked;
+  }
+
+  isHeld(action: InputAction): boolean {
+    return this.held.has(action);
   }
 
   setBindings(bindings: KeyBindings): void {
@@ -76,7 +86,7 @@ export class InputManager {
     this.lookDeltaY += dy;
   }
 
-  /** 每個模擬步驟呼叫一次；跳躍與蹲下的按下事件只會被取用一次。 */
+  /** 每個模擬步驟呼叫一次。 */
   consumeSimulationInput(): SimulationInput {
     const input: SimulationInput = {
       move: {
@@ -84,11 +94,10 @@ export class InputManager {
         right: axis(this.held.has('moveRight'), this.held.has('moveLeft')),
         sprint: this.held.has('sprint'),
       },
-      jumpPressed: this.jumpLatched,
-      crouchToggled: this.crouchLatched,
+      held: new Set(this.held),
+      pressed: this.pressed,
     };
-    this.jumpLatched = false;
-    this.crouchLatched = false;
+    this.pressed = new Set();
     return input;
   }
 
@@ -100,10 +109,23 @@ export class InputManager {
     this.disposers.length = 0;
   }
 
-  private listen(source: Window | Document, type: string, handler: (event: never) => void): void {
+  private listen(source: Window | Document, type: string, handler: (event: never) => void, options?: AddEventListenerOptions): void {
     const listener = handler as EventListener;
-    source.addEventListener(type, listener);
-    this.disposers.push(() => source.removeEventListener(type, listener));
+    source.addEventListener(type, listener, options);
+    this.disposers.push(() => source.removeEventListener(type, listener, options));
+  }
+
+  private press(action: InputAction): void {
+    if (!this.held.has(action)) {
+      this.pressed.add(action);
+    }
+    this.held.add(action);
+    this.uiListener?.(action, true);
+  }
+
+  private release(action: InputAction): void {
+    this.held.delete(action);
+    this.uiListener?.(action, false);
   }
 
   private readonly handlePointerLockChange = (): void => {
@@ -127,23 +149,52 @@ export class InputManager {
     if (!action) {
       return;
     }
-    // 避免空白鍵捲動頁面、方向鍵移動焦點。
+    // 避免空白鍵捲動頁面、Tab 移動焦點。
     event.preventDefault();
-    if (event.repeat) {
-      return;
-    }
-    this.held.add(action);
-    if (action === 'jump') {
-      this.jumpLatched = true;
-    } else if (action === 'crouch') {
-      this.crouchLatched = true;
+    if (!event.repeat) {
+      this.press(action);
     }
   };
 
   private readonly handleKeyUp = (event: KeyboardEvent): void => {
     const action = this.lookup.get(event.code);
     if (action) {
-      this.held.delete(action);
+      this.release(action);
+    }
+  };
+
+  private readonly handleMouseDown = (event: MouseEvent): void => {
+    if (!this.locked) {
+      return;
+    }
+    const action = this.lookup.get(`Mouse${event.button}`);
+    if (action) {
+      event.preventDefault();
+      this.press(action);
+    }
+  };
+
+  private readonly handleMouseUp = (event: MouseEvent): void => {
+    const action = this.lookup.get(`Mouse${event.button}`);
+    if (action) {
+      this.release(action);
+    }
+  };
+
+  private readonly handleWheel = (event: WheelEvent): void => {
+    if (!this.locked || event.deltaY === 0) {
+      return;
+    }
+    event.preventDefault();
+    const action = this.lookup.get(event.deltaY > 0 ? 'WheelDown' : 'WheelUp');
+    if (action) {
+      this.pressed.add(action);
+    }
+  };
+
+  private readonly handleContextMenu = (event: Event): void => {
+    if (this.locked) {
+      event.preventDefault();
     }
   };
 
@@ -162,9 +213,11 @@ export class InputManager {
   };
 
   private readonly clear = (): void => {
+    for (const action of this.held) {
+      this.uiListener?.(action, false);
+    }
     this.held.clear();
-    this.jumpLatched = false;
-    this.crouchLatched = false;
+    this.pressed = new Set();
     this.lookDeltaX = 0;
     this.lookDeltaY = 0;
   };

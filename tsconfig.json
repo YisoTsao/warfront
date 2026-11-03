@@ -1,7 +1,23 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/shared" },
-    { "path": "./apps/web" }
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/map-schema"
+    },
+    {
+      "path": "./packages/game-config"
+    },
+    {
+      "path": "./packages/simulation"
+    },
+    {
+      "path": "./tools/map-build"
+    },
+    {
+      "path": "./apps/web"
+    }
   ]
 }

@@ -1,0 +1,13 @@
+{
+  "name": "@frontline/simulation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "@frontline/game-config": "workspace:*",
+    "@frontline/map-schema": "workspace:*",
+    "@frontline/shared": "workspace:*"
+  }
+}

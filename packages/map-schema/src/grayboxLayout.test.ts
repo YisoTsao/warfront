@@ -1,4 +1,3 @@
-import { CAPSULE } from '@frontline/shared';
 import { describe, expect, it } from 'vitest';
 import { GRAYBOX_LAYOUT, TUNNEL_CLEARANCE, ramp, stairs } from './grayboxLayout';
 
@@ -45,9 +44,9 @@ describe('GRAYBOX_LAYOUT', () => {
     }
   });
 
-  it('通道淨高介於蹲姿與站姿高度之間', () => {
-    expect(TUNNEL_CLEARANCE).toBeGreaterThan(CAPSULE.crouchingHalfHeight * 2);
-    expect(TUNNEL_CLEARANCE).toBeLessThan(CAPSULE.standingHalfHeight * 2);
+  it('通道淨高介於蹲姿（1.2 m）與站姿（1.84 m）高度之間', () => {
+    expect(TUNNEL_CLEARANCE).toBeGreaterThan(1.2);
+    expect(TUNNEL_CLEARANCE).toBeLessThan(1.84);
   });
 
   it('出生點在地圖範圍內且高於回收高度', () => {

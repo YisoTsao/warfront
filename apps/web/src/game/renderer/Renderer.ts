@@ -1,19 +1,20 @@
 import * as THREE from 'three';
 
-/** 渲染器與場景的基本設定。WebGL 2 為基準路徑。 */
+/** 渲染器與場景的基本設定。WebGL 2 為基準路徑；光源與霧由地圖環境設定。 */
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   private readonly resizeObserver: ResizeObserver;
   private contextLost = false;
+  private renderScale = 1;
+  private maxPixelRatio = 2;
 
   constructor(
     private readonly container: HTMLElement,
     private readonly onContextChange: (lost: boolean) => void,
   ) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1;
@@ -23,10 +24,9 @@ export class Renderer {
     this.renderer.domElement.tabIndex = 0;
     container.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(60, 1, 0.05, 2000);
+    this.camera = new THREE.PerspectiveCamera(60, 1, 0.05, 1500);
     this.camera.rotation.order = 'YXZ';
-
-    this.setupLighting();
+    this.scene.add(this.camera);
 
     this.renderer.domElement.addEventListener('webglcontextlost', this.handleContextLost);
     this.renderer.domElement.addEventListener('webglcontextrestored', this.handleContextRestored);
@@ -50,6 +50,35 @@ export class Renderer {
     const info = gl.getExtension('WEBGL_debug_renderer_info');
     const value: unknown = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
     return typeof value === 'string' ? value : '未知';
+  }
+
+  /** 渲染解析度倍率（動態解析度與畫質等級使用）。 */
+  setRenderScale(scale: number, maxPixelRatio = this.maxPixelRatio): void {
+    const clamped = Math.min(1, Math.max(0.4, scale));
+    if (Math.abs(clamped - this.renderScale) < 0.01 && maxPixelRatio === this.maxPixelRatio) {
+      return;
+    }
+    this.renderScale = clamped;
+    this.maxPixelRatio = maxPixelRatio;
+    this.resize();
+  }
+
+  get currentRenderScale(): number {
+    return this.renderScale;
+  }
+
+  setShadowsEnabled(enabled: boolean): void {
+    if (this.renderer.shadowMap.enabled !== enabled) {
+      this.renderer.shadowMap.enabled = enabled;
+      this.scene.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          const materials: THREE.Material[] = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of materials) {
+            m.needsUpdate = true;
+          }
+        }
+      });
+    }
   }
 
   render(): void {
@@ -80,33 +109,10 @@ export class Renderer {
     this.renderer.domElement.remove();
   }
 
-  private setupLighting(): void {
-    const sky = new THREE.Color(0x9fb4c7);
-    this.scene.background = sky;
-    this.scene.fog = new THREE.Fog(sky, 60, 220);
-
-    const hemisphere = new THREE.HemisphereLight(0xdfe8f2, 0x4a4a3a, 1.1);
-    this.scene.add(hemisphere);
-
-    const sun = new THREE.DirectionalLight(0xfff1dc, 2.2);
-    sun.position.set(40, 70, 25);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const extent = 65;
-    sun.shadow.camera.left = -extent;
-    sun.shadow.camera.right = extent;
-    sun.shadow.camera.top = extent;
-    sun.shadow.camera.bottom = -extent;
-    sun.shadow.camera.near = 10;
-    sun.shadow.camera.far = 180;
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.03;
-    this.scene.add(sun);
-  }
-
   private resize(): void {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.maxPixelRatio) * this.renderScale);
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();

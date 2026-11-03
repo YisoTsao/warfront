@@ -8,6 +8,7 @@ import {
   resolveLocomotion,
   resolveStance,
   stepHorizontalVelocity,
+  toggleStance,
   stepVerticalVelocity,
   targetSpeed,
   wishDirection,
@@ -59,6 +60,11 @@ describe('targetSpeed', () => {
     expect(targetSpeed('standing', false)).toBe(MOVEMENT.walkSpeed);
     expect(targetSpeed('standing', true)).toBe(MOVEMENT.sprintSpeed);
     expect(targetSpeed('crouching', true)).toBe(MOVEMENT.crouchSpeed);
+    expect(targetSpeed('prone', false)).toBe(MOVEMENT.proneSpeed);
+  });
+
+  it('瞄準時降速且不能衝刺', () => {
+    expect(targetSpeed('standing', true, true)).toBeCloseTo(MOVEMENT.walkSpeed * MOVEMENT.aimSpeedMultiplier);
   });
 });
 
@@ -136,10 +142,25 @@ describe('stepVerticalVelocity', () => {
 });
 
 describe('resolveStance / resolveLocomotion', () => {
-  it('頭頂空間不足時維持蹲姿', () => {
-    expect(resolveStance(false, false)).toBe('crouching');
-    expect(resolveStance(false, true)).toBe('standing');
-    expect(resolveStance(true, true)).toBe('crouching');
+  it('往低處換姿勢一定成功', () => {
+    expect(resolveStance('standing', 'prone', () => false)).toBe('prone');
+    expect(resolveStance('crouching', 'prone', () => false)).toBe('prone');
+  });
+
+  it('頭頂空間不足時維持目前姿勢', () => {
+    expect(resolveStance('crouching', 'standing', () => false)).toBe('crouching');
+    expect(resolveStance('crouching', 'standing', () => true)).toBe('standing');
+  });
+
+  it('臥倒想站起但只放得下蹲姿時改為蹲下', () => {
+    expect(resolveStance('prone', 'standing', (s) => s !== 'standing')).toBe('crouching');
+  });
+
+  it('姿勢按鍵為切換', () => {
+    expect(toggleStance('standing', 'crouch')).toBe('crouching');
+    expect(toggleStance('crouching', 'crouch')).toBe('standing');
+    expect(toggleStance('crouching', 'prone')).toBe('prone');
+    expect(toggleStance('prone', 'prone')).toBe('standing');
   });
 
   it('依地面、速度與衝刺推導移動狀態', () => {

@@ -1,14 +1,15 @@
+import { TICK_RATE } from '@frontline/shared';
 import { expect, type Page } from '@playwright/test';
 import type { FrontlineDebugHook, StepSample } from '../src/game/debug/debugHook';
 
 export type Snapshot = ReturnType<FrontlineDebugHook['snapshot']>;
 export type { StepSample };
 
-/** 模擬頻率：紀錄中每一步為 1/60 秒 */
-export const STEPS_PER_SECOND = 60;
+/** 模擬頻率：與伺服器 tick 相同 */
+export const STEPS_PER_SECOND = TICK_RATE;
 
 /** 開啟遊戲並等待載入完成（尚未鎖定滑鼠）。回傳收集頁面錯誤的陣列。 */
-export async function openGame(page: Page): Promise<string[]> {
+export async function openGame(page: Page, mapId = 'graybox'): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
@@ -16,8 +17,8 @@ export async function openGame(page: Page): Promise<string[]> {
       errors.push(message.text());
     }
   });
-  await page.goto('/?debug=1');
-  await page.waitForFunction(() => window.__frontline !== undefined, null, { timeout: 30_000 });
+  await page.goto(`/?debug=1&map=${mapId}`);
+  await page.waitForFunction(() => window.__frontline !== undefined, null, { timeout: 60_000 });
   // 讓物理先跑幾步，角色落到地面。
   await page.waitForFunction(() => window.__frontline?.snapshot().grounded === true);
   return errors;
@@ -43,6 +44,16 @@ export async function teleport(page: Page, x: number, y: number, z: number, yaw 
     [x, y, z, yaw] as const,
   );
   await page.waitForFunction(() => window.__frontline?.snapshot().grounded === true);
+}
+
+/** 把玩家放到 (x, z) 的地面上（高度由碰撞世界查詢）。 */
+export async function teleportToGround(page: Page, x: number, z: number, yaw = 0): Promise<number> {
+  const ground = await page.evaluate(([px, pz]) => window.__frontline!.groundHeight(px, pz), [x, z] as const);
+  if (ground === null) {
+    throw new Error(`(${x}, ${z}) 找不到地面`);
+  }
+  await teleport(page, x, ground + 0.05, z, yaw);
+  return ground;
 }
 
 /**

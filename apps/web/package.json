@@ -10,8 +10,12 @@
     "e2e": "vite build && playwright test"
   },
   "dependencies": {
+    "@colyseus/sdk": "0.18.9",
     "@dimforge/rapier3d-compat": "0.21.0",
+    "@frontline/game-config": "workspace:*",
+    "@frontline/map-schema": "workspace:*",
     "@frontline/shared": "workspace:*",
+    "@frontline/simulation": "workspace:*",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "three": "0.187.0"

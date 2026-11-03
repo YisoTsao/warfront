@@ -1,6 +1,5 @@
 import * as THREE from 'three';
-import type { PhysicsWorld } from '../physics/PhysicsWorld';
-import type { BoxSpec, GrayboxLayout, SurfaceKind } from './grayboxLayout';
+import { boxRotationQuaternion, type BoxSpec, type GrayboxLayout, type SurfaceKind } from '@frontline/map-schema';
 
 const SURFACE_COLORS: Record<SurfaceKind, number> = {
   floor: 0x7d8471,
@@ -43,8 +42,8 @@ function createGridTexture(): THREE.CanvasTexture {
   return texture;
 }
 
-/** 由灰盒資料建立可見網格與對應的靜態碰撞體；視覺與碰撞分開建立。 */
-export function buildGrayboxMap(layout: GrayboxLayout, scene: THREE.Scene, physics: PhysicsWorld): THREE.Group {
+/** 由灰盒資料建立可見網格。碰撞由 @frontline/map-schema 的 grayboxCollision() 另外建立。 */
+export function buildGrayboxVisuals(layout: GrayboxLayout, scene: THREE.Scene): THREE.Group {
   const group = new THREE.Group();
   group.name = 'graybox';
   const gridTexture = createGridTexture();
@@ -66,28 +65,21 @@ export function buildGrayboxMap(layout: GrayboxLayout, scene: THREE.Scene, physi
     return material;
   };
 
-  const euler = new THREE.Euler();
   const quaternion = new THREE.Quaternion();
 
   for (const spec of layout.boxes) {
     const [sx, sy, sz] = spec.size;
     const [px, py, pz] = spec.position;
-    euler.set(spec.rotationX ?? 0, spec.rotationY ?? 0, 0, 'YXZ');
-    quaternion.setFromEuler(euler);
+    quaternion.fromArray(boxRotationQuaternion(spec));
 
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), materialFor(spec));
     mesh.name = spec.name;
     mesh.position.set(px, py, pz);
     mesh.quaternion.copy(quaternion);
     mesh.castShadow = spec.surface !== 'floor';
+    mesh.userData.castShadow = spec.surface !== 'floor';
     mesh.receiveShadow = true;
     group.add(mesh);
-
-    physics.addStaticBox(
-      { x: sx / 2, y: sy / 2, z: sz / 2 },
-      { x: px, y: py, z: pz },
-      { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w },
-    );
   }
 
   gridTexture.dispose();

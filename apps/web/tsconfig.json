@@ -1,12 +1,37 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
     "outDir": ".tsbuild",
     "tsBuildInfoFile": ".tsbuild/tsconfig.tsbuildinfo",
-    "types": ["vite/client", "node"]
+    "types": [
+      "vite/client",
+      "node"
+    ]
   },
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"],
-  "references": [{ "path": "../../packages/shared" }]
+  "include": [
+    "src",
+    "e2e",
+    "vite.config.ts",
+    "playwright.config.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/shared"
+    },
+    {
+      "path": "../../packages/map-schema"
+    },
+    {
+      "path": "../../packages/game-config"
+    },
+    {
+      "path": "../../packages/simulation"
+    }
+  ]
 }

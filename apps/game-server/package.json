@@ -1,0 +1,25 @@
+{
+  "name": "@frontline/game-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "bun build src/index.ts --target=node --outdir dist --format esm",
+    "serve": "node dist/index.js"
+  },
+  "dependencies": {
+    "@colyseus/core": "0.18.25",
+    "@colyseus/schema": "5.0.43",
+    "@colyseus/ws-transport": "0.18.4",
+    "@frontline/game-config": "workspace:*",
+    "@frontline/map-schema": "workspace:*",
+    "@frontline/shared": "workspace:*",
+    "@frontline/simulation": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "tsx": "4.23.15"
+  }
+}

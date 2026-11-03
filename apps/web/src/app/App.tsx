@@ -11,5 +11,6 @@ export function App() {
   if (!compatibility.supported) {
     return <CompatibilityNotice report={compatibility} />;
   }
-  return <GameView settings={settings} onSettingsChange={(next) => setSettings(sanitizeSettings(next))} />;
+  const mapId = new URLSearchParams(window.location.search).get('map') ?? 'graybox';
+  return <GameView mapId={mapId} settings={settings} onSettingsChange={(next) => setSettings(sanitizeSettings(next))} />;
 }

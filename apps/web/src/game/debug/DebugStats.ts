@@ -1,5 +1,5 @@
 import type * as THREE from 'three';
-import type { PlayerSnapshot } from '../player/PlayerController';
+import type { CharacterSnapshot } from '@frontline/simulation';
 
 const SAMPLE_COUNT = 240;
 const REFRESH_SECONDS = 0.25;
@@ -39,7 +39,7 @@ export class DebugStats {
   }
 
   /** 每個渲染畫格呼叫一次（在 render 之後，才拿得到這一格的 draw calls）。 */
-  record(frameSeconds: number, player: PlayerSnapshot, yaw: number, pitch: number): void {
+  record(frameSeconds: number, player: CharacterSnapshot, yaw: number, pitch: number): void {
     this.samples[this.sampleIndex] = frameSeconds * 1000;
     this.sampleIndex = (this.sampleIndex + 1) % SAMPLE_COUNT;
     this.sampleCount = Math.min(SAMPLE_COUNT, this.sampleCount + 1);
@@ -70,7 +70,7 @@ export class DebugStats {
     };
   }
 
-  private format(player: PlayerSnapshot, yaw: number, pitch: number): string {
+  private format(player: CharacterSnapshot, yaw: number, pitch: number): string {
     const s = this.latest;
     const speed = Math.hypot(player.velocity.x, player.velocity.z);
     const deg = (r: number) => ((r * 180) / Math.PI).toFixed(0);

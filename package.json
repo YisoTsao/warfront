@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tools/*"
   ],
   "scripts": {
     "dev": "bun run --cwd apps/web dev",
@@ -13,8 +14,10 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",
-    "e2e": "bun run --cwd apps/web e2e",
-    "check": "bun run typecheck && bun run lint && bun run test"
+    "e2e": "bun run maps:sample && bun run --cwd apps/web e2e",
+    "check": "bun run typecheck && bun run lint && bun run test",
+    "maps:build": "bun run --cwd tools/map-build build-map",
+    "maps:sample": "bun run --cwd tools/map-build sample && bun run --cwd tools/map-build build-map --input ../../assets/blender-source/exports/sample-valley.glb --id sample-valley --name 範例谷地"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
