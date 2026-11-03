@@ -5,6 +5,7 @@ dist/
 *.tsbuildinfo
 .vite/
 apps/web/test-results/
+logs/
 apps/web/playwright-report/
 
 # 編輯器

@@ -1,80 +1,94 @@
-# 資產流程（Blender → Web）
+# 資產流程（Blender → GLB → 執行期地圖）
 
-> 依據：`FRONTLINE_WEB_PROJECT_SPEC.md` §8。Phase 2 開始實作。
-> **目前阻礙**：repo 與開發環境中都找不到 Blackwood Valley 的 Blender 原始檔，詳見 `PHASE0_ENVIRONMENT_REPORT.md` §4。
+> 依據：`FRONTLINE_WEB_PROJECT_SPEC.md` §8。本文件描述已實作的 `tools/map-build`。
+> **Blackwood Valley 的原始檔尚未提供**；流程已用「範例谷地」驗證（`bun run maps:sample`）。
 
 ## 1. 原則
 
-- `.blend` 原始檔保留不動，不覆蓋、不刪除。瀏覽器只載入最佳化後的執行期資產，絕不載入整個 Blender 專案。
-- 視覺網格與遊戲碰撞網格分開。精細的樹、岩石、建築不會自動變成物理碰撞體。
-- 不假設任意 Blender shader node、Geometry Nodes、程序材質或模擬能直接轉到 Three.js；做不到的效果要烘焙或在 Three.js 重建。
-- 不做一個包含整張地圖的巨大 GLB。
+- `.blend` 原始檔保留不動。瀏覽器只載入轉換後的執行期資料，不載入 Blender 專案。
+- 視覺網格與碰撞網格分開；精細的樹、岩石、建築不會自動變成碰撞體。
+- 不假設任意 shader node、Geometry Nodes、程序材質或模擬能直接轉到 Three.js；做不到的效果要烘焙。
+- 不做一個包含整張地圖的巨大 GLB：map-build 會自動切成分塊。
 
 ## 2. 目錄
 
 ```text
 assets/
-├── blender-source/              原始 .blend（或放在獨立的資產 repo）
-├── exported/                    匯出後的 GLB / KTX2
+├── blender-source/
+│   ├── blackwood-valley.blend          原始檔（Git LFS，或放在獨立的資產 repo）
+│   └── exports/blackwood-valley.glb    從 Blender 匯出的 glTF（map-build 的輸入）
 └── maps/
-    └── blackwood-valley/
-        ├── map-manifest.json    分塊、LOD、碰撞、遊戲標記
-        ├── chunks/              地形分塊與道具群組
-        └── collision/           簡化碰撞網格
+    └── blackwood-valley/               map-build 的輸出（瀏覽器與伺服器都讀這裡）
+        ├── map-manifest.json
+        ├── collision.json
+        └── chunks/*.glb
 ```
 
-大型二進位檔走 Git LFS（`.gitattributes` 已設定 `.blend`、`.glb`、`.ktx2`、`.png`、`.jpg`、`.exr`、`.hdr`、`.wav`、`.ogg` 等）。
+## 3. Blender 端的慣例
 
-## 3. Blender 集合命名
+### 3.1 集合與角色
 
-| 集合 | 內容 | 匯出 |
+以頂層 empty（或集合匯出成的父節點）命名，物件也可以用自訂屬性 `frontline_role` 指定角色（優先）。
+
+| 名稱（前綴） | 用途 | map-build 的處理 |
 |---|---|---|
-| `ENV_Terrain` | 地形 | 依分塊匯出 GLB |
-| `ENV_Rocks`、`ENV_Trees`、`ENV_Foliage` | 岩石、樹、植被 | 每種一份網格（含 LOD），擺放位置另存 instance 資料 |
-| `ENV_Buildings`、`ENV_Props` | 建築、道具 | 依地標或區域分組匯出 |
-| `ENV_Weapons` | 武器模型 | 個別匯出 |
-| `COLLISION_Static` | 移動碰撞（低面數） | 匯出為碰撞資料，不渲染 |
-| `COLLISION_Bullet` | 子彈碰撞（必要時與移動碰撞不同） | 同上 |
-| `GAMEPLAY_SpawnPoints`、`GAMEPLAY_Objectives`、`GAMEPLAY_RestrictedAreas`、`GAMEPLAY_WaterVolumes` | 遊戲標記（empty 加自訂屬性） | 匯出到 `map-manifest.json` |
-| `LIGHTING_Reference` | 光照參考 | 不匯出 |
+| `ENV_Terrain` | 地形分塊、水面 | 地形分塊，一開始就載入 |
+| `ENV_Rocks`、`ENV_Trees`、`ENV_Foliage`、`ENV_Buildings`、`ENV_Props` | 視覺物件 | 依 64 m 分塊，依距離串流；同一網格出現 4 次以上自動合併為 GPU instancing |
+| `ENV_Weapons` | 武器模型 | 不放進地圖 |
+| `COLLISION_Static` | 碰撞（擋人與子彈） | 輸出到 collision.json，不渲染 |
+| `COLLISION_Bullet` | 只擋子彈的碰撞 | 同上，layer = bullet |
+| `GAMEPLAY_SpawnPoints` | 出生點（empty） | manifest.spawns |
+| `GAMEPLAY_Objectives` | 據點（empty） | manifest.objectives |
+| `GAMEPLAY_RestrictedAreas` | 禁區（立方體 empty） | manifest.restrictedAreas |
+| `GAMEPLAY_WaterVolumes` | 水域（立方體 empty） | manifest.waterVolumes（深水移動速度 50%、淺水 80%） |
+| `LIGHTING_Reference` | 名稱含 `Sun` 的 empty | 太陽方向（empty 的 -Z 軸）與環境設定 |
 
-## 4. 匯出流程
+### 3.2 自訂屬性（glTF extras）
 
-1. **檢查**：比例（1 Blender 單位 = 1 公尺）、方向（glTF 匯出時轉為 Y 軸朝上）、樞紐點、套用變換。
-2. **材質**：使用 Principled BSDF 相容的 PBR 參數（base color、roughness、metallic、normal、AO）。不支援的效果烘焙成貼圖。
-3. **網格**：大型或重複的資產製作 LOD；重複的植被與道具改為 instancing。
-4. **匯出 glTF 2.0 / GLB**：使用 Blender 內建 glTF 匯出器，依集合與分塊分別輸出。
-5. **壓縮**：幾何用 Meshopt 或 Draco（以量測決定），貼圖轉 KTX2 / Basis Universal。
-6. **碰撞**：`COLLISION_*` 匯出成低面數網格或基本形狀，客戶端與伺服器都用同一份。
-7. **manifest**：產生 `map-manifest.json`，記錄每個分塊的路徑、邊界、LOD、碰撞資料與遊戲標記。
-8. **驗證**：在瀏覽器載入代表性的一小區，檢查材質、比例、方向、碰撞與畫格時間。
+| 物件 | 屬性 | 說明 |
+|---|---|---|
+| 碰撞物件 | `collider = "box"` | 以物件的包圍盒（含旋轉與縮放）輸出方塊碰撞；名稱以 `UBX_` 或 `BOX_` 開頭也可以。否則輸出三角網格 |
+| 碰撞物件 | `layer = "movement"` | 只擋人不擋子彈（例如鐵絲網） |
+| 碰撞物件 | `material` | `dirt`、`rock`、`wood`、`metal`… 決定命中特效與腳步聲 |
+| 出生點 | `team = "alpha"` / `"bravo"` | 不填則兩隊共用；名稱含 Alpha / Bravo 也可以 |
+| 出生點 | `yaw_degrees` | 覆寫朝向（預設用 empty 的 -Z 軸） |
+| 據點 | `objective_id`、`display_name`、`radius`、`initial_owner` | 半徑預設為 empty 的縮放 |
+| 禁區 | `team`、`grace_seconds` | 只限制某一隊；進入後幾秒判定死亡 |
+| 水域 | `depth = "deep"` / `"shallow"` | |
+| 太陽 | `sun_color`、`sun_intensity`、`sky_color`、`fog_color`、`fog_near`、`fog_far`、`hemisphere_sky`、`hemisphere_ground`、`hemisphere_intensity` | |
+| LOD 資料庫物件 | `lod_library = true` | 只提供網格，不擺在場景裡 |
 
-匯出步驟最後要寫成可重複執行的腳本（Blender headless + 壓縮工具），不靠手動操作。
+### 3.3 LOD
 
-## 5. 地圖資料（`map-manifest.json`）
+網格命名為 `Pine_LOD0`、`Pine_LOD1`…。場景中擺放使用 `Pine_LOD0` 的物件；`Pine_LOD1` 放一個帶 `lod_library = true` 的物件即可。map-build 會為每組 instancing 產生 LOD0 與 LOD1 兩組，前端依距離切換（預設 70 m、160 m）。
 
-由 `packages/map-schema` 定義 schema，前端與伺服器都驗證。內容至少包含：
+### 3.4 匯出設定（Blender glTF 2.0）
 
-- 兩隊的出生點。
-- 目標位置與佔領半徑／區域。
-- 禁區。
-- 淺水與深水區域。
-- 掩體與視線阻擋物。
-- 子彈碰撞與材質穿透資料（需要時）。
-- 地圖邊界與出界回收規則。
-- 之後 bot 使用的導航資料（選用）。
+- 格式：glTF Binary（`.glb`）；+Y Up（預設）。
+- 包含：Custom Properties（必須勾選，遊戲標記靠它）、Selected / Visible 依需要。
+- 幾何：Apply Modifiers、UVs、Normals、Vertex Colors；不要勾選 Draco（map-build 會用 Meshopt 壓縮）。
+- 單位：1 Blender 單位 = 1 公尺；物件套用縮放與旋轉後再擺放 empty。
+- 材質：Principled BSDF（base color、roughness、metallic、normal）。
 
-遊戲標記用 Blender empty 或明確命名的標記物件，搭配自訂屬性描述設定，不只靠物件名稱。
+## 4. 執行 map-build
 
-## 6. 串流與可見度
+```bash
+bun run maps:build -- --input assets/blender-source/exports/blackwood-valley.glb --id blackwood-valley --name "Blackwood Valley"
+```
 
-- 地圖分成數個空間分塊；先載入附近分塊，遠處的視覺資產漸進載入。
-- 出生區域的分塊必須載入完成，才允許玩家在那裡出生。
-- 使用視錐剔除、距離剔除、LOD、instancing 與依遮蔽分組。
-- 高密度植被不能在整張地圖都以最高細節渲染。
-- 碰撞幾何與渲染 LOD 無關，永遠使用簡化碰撞網格。
-- 增加地圖密度前，先量測記憶體與 draw calls。
+選項：`--out <目錄>`（預設 `assets/maps/<id>`）、`--chunk-size 64`、`--no-compress`。
 
-## 7. 與 Phase 1 灰盒的關係
+輸出報告包含每個分塊的大小與 instancing 數量、碰撞數量、出生點與據點數量，以及警告（例如某隊沒有出生點、有物件不在任何集合內）。manifest 與碰撞資料在寫出前都會經過 schema 驗證。
 
-Phase 1 的灰盒地圖（`apps/web/src/game/world/grayboxLayout.ts`）已經採用「資料描述 → 建置器分別建立視覺網格與碰撞」的分層。Phase 2 會新增一個以 `map-manifest.json` 為輸入的建置器，灰盒保留為移動與碰撞的回歸測試場景。
+新地圖要在 `apps/web/src/game/world/maps.ts` 的清單中加上 id 與名稱，主選單才會顯示。
+
+## 5. 執行期
+
+- 前端：地形分塊先載入；細節分塊在 `streamDistance` 內載入，超出 1.3 倍後卸載並釋放 GPU 資源；同時最多 3 個下載。玩家出生前會先載入必要分塊。
+- 植被品質會改變串流距離（低 60%、中 85%、高 100%）。
+- 伺服器只讀 `map-manifest.json` 與 `collision.json`，不載入視覺分塊。
+
+## 6. 尚未實作
+
+- KTX2 貼圖轉換：前端已支援 KTX2（`/basis/` 轉碼器），map-build 尚未自動轉檔（需要 `toktx`）。範例谷地使用頂點色，沒有貼圖。
+- 遮蔽剔除與導航網格（bot 目前用直線前進加繞路）。

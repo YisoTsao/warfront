@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CLASSES, getWeapon, type Loadout } from '@frontline/game-config';
 import { sanitizeName, type GuestProfile } from '../app/profile';
-import { AVAILABLE_MAPS } from '../game/world/MapRuntime';
+import { AVAILABLE_MAPS } from '../game/world/maps';
 
 export type MenuChoice =
   | { kind: 'quickMatch'; mode: 'tdm' | 'conquest'; mapId: string; bots: number }

@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/.tsbuild
+**/test-results
+**/playwright-report
+legacy
+logs
+.git

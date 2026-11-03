@@ -5,10 +5,7 @@ import { ChunkStreamer, type StreamingStats } from './ChunkStreamer';
 import { applyEnvironment, followShadow, type EnvironmentHandles } from './Environment';
 import { buildGrayboxVisuals } from './GrayboxMap';
 
-export const AVAILABLE_MAPS = [
-  { id: GRAYBOX_MAP_ID, name: '灰盒測試場' },
-  { id: 'sample-valley', name: '範例谷地（GLB 匯入）' },
-] as const;
+export { AVAILABLE_MAPS } from './maps';
 
 export interface MapLoadProgress {
   stage: 'manifest' | 'chunks' | 'ready';

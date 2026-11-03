@@ -6,106 +6,115 @@
 
 ```text
 桌面瀏覽器
-├── React 外殼（apps/web/src/app、src/ui）
-│   └── 選單、設定、相容性提示、載入畫面；之後加入大廳、HUD、計分板
-├── 遊戲本體（apps/web/src/game）── 每畫格邏輯，不經過 React
-│   ├── core/      生命週期、固定步長迴圈、設定、相容性檢查
-│   ├── input/     鍵盤、滑鼠、Pointer Lock、按鍵綁定
-│   ├── renderer/  Three.js 渲染器、場景、光源、context 遺失處理
-│   ├── physics/   Rapier 初始化與靜態碰撞
-│   ├── world/     地圖資料與建置（目前為灰盒）
-│   ├── player/    角色控制器、相機
-│   └── debug/     效能面板、測試用除錯介面
-│
-└── HTTPS / WSS（Phase 4 起）
-    ├── Colyseus 權威伺服器（apps/game-server）
-    └── 後端 API（Supabase Auth + PostgreSQL，需要帳號時）
+├── React 外殼（apps/web/src/app、src/ui）── 主選單、伺服器列表、部署畫面、HUD、計分板、設定
+└── 遊戲本體（apps/web/src/game）── 每畫格邏輯，不經過 React；以動態 import 延後載入
+    ├── core/      GameBase 主迴圈、TrainingGame（單機）、OnlineGame（連線）、設定、畫質控制
+    ├── input/     鍵盤、滑鼠、滾輪、Pointer Lock、可重新綁定的按鍵
+    ├── renderer/  WebGL 2 渲染器、武器模型疊加 pass、暈影後處理、動態解析度
+    ├── world/     MapRuntime、GLB 分塊串流與 LOD、環境光、灰盒地圖
+    ├── player/    本機玩家、相機（ADS、後座力、落地）、腳步聲
+    ├── weapons/   武器欄、開火流程、第一人稱武器模型
+    ├── network/   GameTransport 介面與 Colyseus 實作
+    ├── remote/    遠端玩家插值
+    ├── animation/ 士兵模型（AnimationMixer）
+    ├── combat/    靶場假人
+    ├── vfx/       物件池特效
+    ├── audio/     WebAudio 空間音效
+    ├── hud/       HUD store、戰術地圖
+    └── debug/     效能面板、測試用除錯介面
 
-packages/shared  ── 前端預測與伺服器共用的規則與常數
+        │ WSS（Colyseus）
+        ▼
+對戰伺服器（apps/game-server）── 常駐 Node 程序
+├── room/      MatchRoom：加入驗證、訊息結構驗證、限流、重連、tick 推進、送出快照
+├── game/      Match（純遊戲邏輯）、玩家、輸入佇列、血量、延遲補償、模式、出生點、手榴彈、bot
+├── persistence/  對戰結果回報（目前 JSONL）
+└── metrics.ts、logger.ts、index.ts（/health、/metrics、/rooms、/client-errors）
+
+共用套件（前後端都使用同一份程式碼）
+├── packages/shared       移動規則、數學、可重現亂數、網路協定、tick 常數
+├── packages/simulation   Rapier 世界、角色控制器、hitbox、彈道、武器狀態機、輸入框轉換
+├── packages/game-config  武器、配件、手榴彈、兵種、模式資料
+└── packages/map-schema   地圖 manifest、碰撞資料、Blender 命名慣例、灰盒地圖
+
+工具
+└── tools/map-build       Blender 匯出的 GLB → 執行期地圖資料
 ```
 
-## 2. 目前已實作（Phase 1）
+## 2. 為什麼前後端共用 simulation
 
-| 模組 | 檔案 | 職責 |
-|---|---|---|
-| 移動規則 | `packages/shared/src/movement/` | 速度、加速度、衝刺條件、跳躍、姿勢、被牆擋住時的速度修正。純函式，伺服器之後可以用同一份重播 |
-| 固定步長 | `apps/web/src/game/core/FixedStepLoop.ts` | 模擬以 1/60 秒固定推進；單一畫格最多補 0.25 秒；回傳插值係數 |
-| 遊戲生命週期 | `core/Game.ts` | 建立渲染器、物理、地圖、玩家、輸入；主迴圈；釋放資源 |
-| 設定 | `core/settings.ts` | 靈敏度、水平視野、反轉 Y、效能面板；驗證並存在 localStorage |
-| 相容性 | `core/compatibility.ts` | 啟動前檢查 WebGL 2、WebAssembly、Pointer Lock |
-| 輸入 | `input/InputManager.ts`、`keyBindings.ts` | 只在 Pointer Lock 期間接受輸入；失焦、切分頁、解除鎖定時清除按鍵；跳躍與蹲下為「按下事件」，每個模擬步驟取用一次 |
-| 渲染 | `renderer/Renderer.ts` | WebGL 2、ACES 色調映射、方向光陰影、霧；ResizeObserver；context 遺失通知 |
-| 物理 | `physics/PhysicsWorld.ts` | Rapier World、靜態盒狀碰撞 |
-| 地圖 | `world/grayboxLayout.ts`、`GrayboxMap.ts` | 灰盒資料（坡道、樓梯、跳台、低矮通道、牆角）與建置；視覺網格與碰撞分開建立 |
-| 角色 | `player/PlayerController.ts` | Rapier 運動學角色控制器、膠囊碰撞、姿勢切換與頭頂檢查、出界回收 |
-| 相機 | `player/CameraRig.ts` | yaw/pitch（±89° 不翻轉）、水平視野換算、眼高平滑、落地下沉 |
-| 除錯 | `debug/DebugStats.ts`、`debugHook.ts` | FPS、畫格時間 p95/max、draw calls、三角形數；`?debug=1` 時提供 `window.__frontline` |
+客戶端預測與伺服器權威必須算出相同結果，修正才會少。因此以下程式碼只有一份，前端與伺服器都直接使用：
 
-### 2.1 主迴圈
+| 模組 | 用途 |
+|---|---|
+| `SimWorld` | 由同一份 `collision.json` 建立 Rapier 世界；碰撞層分為擋移動、擋子彈、兩者 |
+| `CharacterBody` | 運動學角色控制器（站、蹲、臥、跳、坡道、樓梯、牆面滑動）；狀態可存取與還原（預測修正需要） |
+| `frames.ts` | 輸入框 → 角色輸入、武器輸入的轉換 |
+| `WeaponState` | 以模擬時間推進的武器狀態機（射速、模式、彈藥、換彈、bloom） |
+| `ballistics.ts` | 散佈公式、射擊種子、彈丸方向 |
+| `hitboxes.ts` | 頭、軀幹、四肢的膠囊 hitbox 與射線判定 |
+
+Rapier 的 compat 版本把 WASM 內嵌在 JS 中，瀏覽器與 Node 都能直接使用。
+
+## 3. 主迴圈（用戶端）
 
 ```text
-requestAnimationFrame（Three.js setAnimationLoop）
-├── 套用這一畫格累積的滑鼠位移 → 相機 yaw/pitch（每畫格，反應最快）
-├── FixedStepLoop.advance(畫格時間)
-│   └── 每個 1/60 秒：取輸入 → PlayerController.step → world.step
-├── 以插值係數內插腳底位置 → 相機位置、眼高、視野
-├── 渲染
-└── 記錄效能數據（每 0.25 秒直接寫入 DOM 一次，不經過 React）
+requestAnimationFrame
+├── 套用滑鼠位移 → 相機 yaw / pitch（每畫格）
+├── FixedStepLoop：每 1/30 秒
+│   ├── 單機：本機玩家 → 武器 → 命中（靶場假人）
+│   └── 連線：組輸入框 → 預測（同一套轉換）→ 武器 → 記錄預測 → 送出
+├── 內插本機位置、更新相機與視野
+├── 地圖串流與 LOD、遠端玩家插值、特效、音效聆聽者、戰術地圖
+├── 渲染：主場景 → 清深度 → 武器模型 → 暈影
+└── 效能紀錄、動態解析度
 ```
 
-### 2.2 角色控制器重點
+React 只在事件發生時更新：HUD 數值透過外部 store（`useSyncExternalStore`）只在值改變時通知；準星大小、效能面板、小地圖由遊戲迴圈直接寫入 DOM 或 canvas。e2e 以 MutationObserver 驗證遊玩中 React 管理的 DOM 不會持續變動。
 
-- 膠囊半徑 0.34 m，站姿高 1.84 m、蹲姿高 1.2 m；換姿勢時調整膠囊並維持腳底位置。
-- 站起前用略細的站姿膠囊做重疊測試，頭頂有障礙就維持蹲姿。
-- 坡度 ≤ 45° 可以爬，≥ 50° 會滑下；台階 ≤ 0.35 m 自動跨上；下坡貼地 0.3 m。
-- **預期速度與實際速度分開**：
-  - 預期速度是依輸入加速得到的速度，作為下一步的起點。在地面上不修正，Rapier 的沿牆滑動與自動跨步才拿得到完整輸入（若在撞到台階立面時把速度歸零，就上不了樓梯）。
-  - 在空中時，移除真正擋住角色的牆的分量，避免撞牆後殘留看不見的慣性。
-  - 對外回報（效能面板、之後的網路同步）使用實際速度＝位移 ÷ dt。
+## 4. 伺服器 tick
 
-### 2.3 React 的邊界
+```text
+每 1/30 秒（Match.step）
+├── bot 產生輸入框
+├── 每位玩家：依額度處理佇列中的輸入框（每個只處理一次、依序）
+│   └── 移動 → 切槍 → 武器狀態機 → 射擊（延遲補償 + 命中判定）→ 手榴彈 → 技能 → 救援
+├── 物理世界推進
+├── 手榴彈飛行與爆炸
+├── 血量（流血、回血）、禁區與地圖邊界
+├── 模式規則（佔領、票數、勝負、階段）
+├── 重生
+└── 記錄 hitbox 姿勢（延遲補償）
+每 2 tick：每位玩家各自的快照；每 0.5 秒：對戰狀態（分數、據點、計分板）
+```
 
-- React 只在生命週期事件改變 state：載入完成、Pointer Lock 變化、context 遺失。
-- 遊戲本體以動態 `import()` 延後載入，選單外殼先顯示。
-- e2e 測試以 MutationObserver 驗證：遊玩中 React 管理的 DOM 沒有任何變動。
+## 5. 地圖資料流
 
-## 3. 後續階段的模組（尚未建立）
+```text
+Blender（.blend）
+  → 匯出 glTF（assets/blender-source/exports/<id>.glb）
+  → tools/map-build
+  → assets/maps/<id>/
+       map-manifest.json   出生點、據點、禁區、水域、環境光、分塊清單
+       collision.json      方塊與三角網格碰撞
+       chunks/*.glb        視覺分塊（Meshopt、instancing、LOD）
+  → 瀏覽器：/maps/<id>/（Vite 開發伺服器直接讀取，建置時複製到 dist）
+  → 伺服器：MAPS_DIR/<id>/（只讀 manifest 與 collision）
+```
 
-依主規格 §16，之後會加入：
+## 6. 程式規則
 
-| 位置 | 內容 | 階段 |
+- TypeScript strict（含 `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes`）；只用 Bun 管理套件。
+- 前後端必須一致的常數與規則一律在共用套件；`shared`、`game-config`、`map-schema` 不能引用 Three.js、DOM 或 Node API。
+- 伺服器專用程式（`apps/game-server`）不會進入瀏覽器 bundle。
+- 不把遊戲邏輯集中在單一 React 元件、單一 game manager 或 Colyseus room：`MatchRoom` 只處理網路，規則在 `Match` 與各模組。
+- 單位：公尺、秒、弧度；Y 軸朝上；yaw = 0 時面向 -Z。
+
+## 7. Bundle
+
+| 檔案 | 大小（gzip） | 內容 |
 |---|---|---|
-| `apps/game-server/` | Colyseus 房間、固定 tick 模擬、驗證、命中判定、模式規則、配對、結果回報、觀測 | Phase 4–6 |
-| `packages/game-config/` | 武器、兵種、模式資料（數值來源見 `PHASE0_ENVIRONMENT_REPORT.md` §3） | Phase 3 起 |
-| `packages/map-schema/` | 地圖 manifest 與遊戲標記的 schema | Phase 2 |
-| `assets/` | Blender 原始檔、匯出資產、地圖資料 | Phase 2 |
-| `apps/web/src/game/` 內新增 `weapons/`、`combat/`、`animation/`、`audio/`、`vfx/`、`network/` | | Phase 3 起 |
-
-## 4. 程式規則
-
-主規格 §16 的規則，加上本專案的補充：
-
-- TypeScript strict（含 `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes`）。
-- 只用 Bun 管理套件，不加入 npm、Yarn、pnpm 的 lockfile。
-- 前後端必須一致的常數一律放在 `packages/shared` 或 `packages/game-config`。
-- `packages/shared` 只能放純函式與純資料，不能引用 `three`、DOM 或 Node API。
-- 伺服器專用的權威程式碼不能進入瀏覽器 bundle。
-- 不把遊戲邏輯集中在單一 React 元件、單一 game manager 或單一 Colyseus room 類別。
-- 每畫格執行的程式碼避免配置新物件（插值位置等使用重複利用的物件）。
-- 單位：公尺、秒、弧度（設定與資料檔可以用度）；Y 軸朝上；yaw = 0 時面向 -Z。
-
-## 5. 驗證
-
-| 指令 | 內容 |
-|---|---|
-| `bun run check` | `tsc -b`、ESLint、Vitest（規則、設定、迴圈、地圖資料） |
-| `bun run build` | 型別檢查 + Vite 正式版建置 |
-| `bun run e2e` | 建置後以 Playwright 在 Chromium 驗證 Phase 1 檢查清單 |
-
-e2e 的移動判斷以「模擬步驟紀錄」為準（`startRecording` / `stopRecording`），不受渲染 FPS 影響，沒有 GPU 的 CI 也能得到一致結果。
-
-## 6. 已知限制
-
-- Rapier 的 WASM 以 base64 內嵌，遊戲 chunk 約 4.9 MB（gzip 1.8 MB）。Phase 2 處理資產載入時一起評估改用獨立 `.wasm` 檔與快取。
-- 按鍵綁定已是資料驅動（`keyBindings.ts`），但還沒有重新綁定的 UI。
-- 尚未評估 WebGPU，也還沒在 Firefox 測試（主規格安排在第一個里程碑之後）。
+| `index-*.js` | 268 KB（84 KB） | React 外殼、選單、設定 |
+| `GameBase-*.js` | 5.2 MB（1.9 MB） | Three.js、Rapier（含 WASM）、遊戲本體——進入遊戲時才載入 |
+| `OnlineGame-*.js` | 188 KB（60 KB） | Colyseus SDK 與連線邏輯 |
+| `basis/` | 585 KB | KTX2 轉碼器（只在地圖使用 KTX2 貼圖時下載） |

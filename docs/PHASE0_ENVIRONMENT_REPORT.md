@@ -79,3 +79,8 @@
 | Blender（4.x） | 無法檢查與匯出地圖資產 | 在美術工作機上執行匯出；之後可在 CI 加 Blender headless 匯出 |
 | 參考 PC 規格 | 無法驗收效能目標 | 由專案負責人指定 CPU、GPU、RAM、瀏覽器版本 |
 | GPU | 雲端容器只能做行為測試 | 效能量測在參考 PC 上進行 |
+
+## 6. 後續更新（2026-11-03）
+
+- Blackwood Valley 原始檔仍未提供。為了驗證 Phase 2 流程，`tools/map-build` 附帶一個依相同 Blender 匯出慣例產生的「範例谷地」（`bun run maps:sample`）；真正的地圖到位後走同一條流程。
+- `legacy/ue5/` 的數值與規則已全部移植到 `packages/game-config` 與 `apps/game-server`；依專案負責人決定保留到 2026-11-10。

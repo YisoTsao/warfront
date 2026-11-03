@@ -1,3 +1,6 @@
+> **已停用，只供參考。** 專案已改為純瀏覽器遊戲（見 repo 根目錄的 README）。
+> 這個資料夾依專案負責人決定保留到 **2026-11-10**，之後刪除；其中的武器、兵種與規則數值已移植到 `packages/game-config` 與 `apps/game-server`。
+
 # FRONTLINE — 寫實多人 FPS
 
 以 Unreal Engine 5（C++ 為核心、Blueprint 做迭代）開發的寫實現代軍事第一人稱射擊遊戲。
