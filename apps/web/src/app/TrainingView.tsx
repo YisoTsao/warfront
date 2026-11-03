@@ -1,23 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Loadout } from '@frontline/game-config';
 import type { Game } from '../game/core/Game';
-import type { MapLoadProgress } from '../game/world/MapRuntime';
 import { saveSettings, type GameSettings } from '../game/core/settings';
+import type { KeyBindings } from '../game/input/keyBindings';
+import type { MapLoadProgress } from '../game/world/MapRuntime';
+import { Hud } from '../ui/Hud';
 import { MenuOverlay } from '../ui/MenuOverlay';
 
 type LoadState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string };
 
-interface GameViewProps {
+interface TrainingViewProps {
   mapId: string;
+  loadout: Partial<Loadout>;
   settings: GameSettings;
+  bindings: KeyBindings;
   onSettingsChange(settings: GameSettings): void;
+  onBindingsChange(bindings: KeyBindings): void;
+  onLeave?: () => void;
 }
 
-/** 掛載 Three.js 畫布與遊戲迴圈。React state 只在生命週期事件（載入、鎖定、暫停）時改變。 */
-export function GameView({ mapId, settings, onSettingsChange }: GameViewProps) {
+/** 訓練場（單機）：掛載 Three.js 畫布與遊戲迴圈。React state 只在生命週期事件時改變。 */
+export function TrainingView({ mapId, loadout, settings, bindings, onSettingsChange, onBindingsChange, onLeave }: TrainingViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const debugRef = useRef<HTMLPreElement>(null);
-  const gameRef = useRef<Game | null>(null);
-  const initialSettings = useRef(settings);
+  const [game, setGame] = useState<Game | null>(null);
+  const initial = useRef({ settings, bindings, loadout });
   const [load, setLoad] = useState<LoadState>({ status: 'loading' });
   const [locked, setLocked] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
@@ -31,13 +38,15 @@ export function GameView({ mapId, settings, onSettingsChange }: GameViewProps) {
       return;
     }
     let cancelled = false;
-    let game: Game | null = null;
+    let created: Game | null = null;
     // 遊戲本體（Three.js、Rapier WASM）延後載入，選單外殼可以先顯示。
     import('../game/core/Game')
       .then(({ Game }) =>
         Game.create(container, {
           mapId,
-          settings: initialSettings.current,
+          settings: initial.current.settings,
+          bindings: initial.current.bindings,
+          loadout: initial.current.loadout,
           callbacks: {
             onPointerLockChange: (isLocked) => {
               setLocked(isLocked);
@@ -51,15 +60,15 @@ export function GameView({ mapId, settings, onSettingsChange }: GameViewProps) {
           },
         }),
       )
-      .then((created) => {
+      .then((instance) => {
         if (cancelled) {
-          created.dispose();
+          instance.dispose();
           return;
         }
-        game = created;
-        gameRef.current = created;
-        created.attachDebugOutput(debugRef.current);
-        created.start();
+        created = instance;
+        instance.attachDebugOutput(debugRef.current);
+        instance.start();
+        setGame(instance);
         setLoad({ status: 'ready' });
       })
       .catch((error: unknown) => {
@@ -69,32 +78,33 @@ export function GameView({ mapId, settings, onSettingsChange }: GameViewProps) {
       });
     return () => {
       cancelled = true;
-      game?.dispose();
-      gameRef.current = null;
+      created?.dispose();
     };
   }, [mapId]);
 
   useEffect(() => {
-    gameRef.current?.applySettings(settings);
+    game?.applySettings(settings);
     saveSettings(settings);
-  }, [settings]);
+  }, [game, settings]);
+
+  useEffect(() => {
+    game?.setBindings(bindings);
+  }, [game, bindings]);
 
   const play = useCallback(() => {
-    const game = gameRef.current;
-    if (!game) {
-      return;
-    }
-    game.requestPointerLock().catch(() => {
+    game?.requestPointerLock().catch(() => {
       // Chrome 在按 Esc 離開後約一秒內會拒絕重新鎖定。
       setLockError('瀏覽器暫時拒絕鎖定滑鼠，請稍候一秒再按一次。');
     });
-  }, []);
+  }, [game]);
+
+  const crosshairRef = useCallback((el: HTMLDivElement | null) => game?.attachCrosshair(el), [game]);
 
   return (
     <div className="game-root">
       <div ref={containerRef} className="game-container" />
       <pre ref={debugRef} className="diagnostics" hidden={!settings.showDiagnostics} aria-label="效能資訊" />
-      {locked && <div className="crosshair" aria-hidden="true" />}
+      {game && <Hud store={game.hud} crosshairRef={crosshairRef} />}
       {load.status === 'loading' && (
         <div className="overlay overlay--solid">
           <p className="subtitle" role="status">
@@ -107,6 +117,11 @@ export function GameView({ mapId, settings, onSettingsChange }: GameViewProps) {
           <div className="panel">
             <h1 className="title">啟動失敗</h1>
             <p className="error">{load.message}</p>
+            {onLeave && (
+              <button type="button" className="button" onClick={onLeave}>
+                返回主選單
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -114,9 +129,12 @@ export function GameView({ mapId, settings, onSettingsChange }: GameViewProps) {
         <MenuOverlay
           mode={hasStarted ? 'paused' : 'start'}
           settings={settings}
+          bindings={bindings}
           lockError={lockError}
           onPlay={play}
           onSettingsChange={onSettingsChange}
+          onBindingsChange={onBindingsChange}
+          {...(onLeave ? { onLeave } : {})}
         />
       )}
       {contextLost && (

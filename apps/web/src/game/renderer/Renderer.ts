@@ -4,6 +4,9 @@ import * as THREE from 'three';
 export class Renderer {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
+  /** 第一人稱武器模型：另一個場景，清掉深度後疊在上面畫，不會穿進牆裡。 */
+  readonly overlayScene = new THREE.Scene();
+  readonly overlayRoot = new THREE.Group();
   readonly camera: THREE.PerspectiveCamera;
   private readonly resizeObserver: ResizeObserver;
   private contextLost = false;
@@ -27,6 +30,12 @@ export class Renderer {
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.05, 1500);
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);
+    this.renderer.autoClear = false;
+    this.overlayScene.add(this.overlayRoot);
+    this.overlayScene.add(new THREE.HemisphereLight(0xe8eef5, 0x3a3a30, 1.4));
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(0.5, 1, 0.6);
+    this.overlayScene.add(key);
 
     this.renderer.domElement.addEventListener('webglcontextlost', this.handleContextLost);
     this.renderer.domElement.addEventListener('webglcontextrestored', this.handleContextRestored);
@@ -82,8 +91,19 @@ export class Renderer {
   }
 
   render(): void {
-    if (!this.contextLost) {
-      this.renderer.render(this.scene, this.camera);
+    if (this.contextLost) {
+      return;
+    }
+    this.renderer.clear();
+    this.renderer.render(this.scene, this.camera);
+    if (this.overlayRoot.children.length > 0) {
+      // 武器模型跟著相機，在清掉深度後才畫
+      this.overlayRoot.position.copy(this.camera.position);
+      this.overlayRoot.quaternion.copy(this.camera.quaternion);
+      this.renderer.clearDepth();
+      const fog = this.overlayScene.fog;
+      this.renderer.render(this.overlayScene, this.camera);
+      this.overlayScene.fog = fog;
     }
   }
 

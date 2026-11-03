@@ -253,11 +253,11 @@ test('3D 渲染迴圈不會造成 React 持續重新渲染', async ({ page }) =>
   await page.evaluate(() => {
     const w = window as unknown as { __mutations: number };
     w.__mutations = 0;
-    const diagnostics = document.querySelector('.diagnostics');
+    const direct = [document.querySelector('.diagnostics'), document.querySelector('.crosshair-dynamic')];
     new MutationObserver((records) => {
       for (const record of records) {
-        // 效能面板由遊戲迴圈直接寫入 DOM，不經過 React，不列入計算。
-        if (!diagnostics?.contains(record.target)) {
+        // 效能面板與準星由遊戲迴圈直接寫入 DOM，不經過 React，不列入計算。
+        if (!direct.some((el) => el?.contains(record.target))) {
           w.__mutations++;
         }
       }
