@@ -141,7 +141,9 @@ export interface ForestSources {
   vegetation: Record<string, InstanceSet>;
   rocks: Record<string, InstanceSet>;
   layout: Layout;
-  files: { water: string; vegetation: string; rocks: string; structures: string };
+  /** 水深圖的最大值（公尺）與流向圖的最大流速（m/s） */
+  waterScale: { maxDepth: number; maxSpeed: number };
+  files: { water: string; vegetation: string; rocks: string; structures: string; flowMap: string };
 }
 
 const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8')) as T;
@@ -150,7 +152,11 @@ export async function readForestSources(dir: string): Promise<ForestSources> {
   const p = (...parts: string[]) => join(dir, ...parts);
   const terrainMeta = readJson<{ config: { size_m: number } }>(p('phase1_terrain', 'terrain_meta.json'));
   const size = terrainMeta.config.size_m;
-  const water = readJson<{ heightmap_carved: { value_0_m: number; value_65535_m: number }; water_depth_map: { value_65535_m: number } }>(
+  const water = readJson<{
+    heightmap_carved: { value_0_m: number; value_65535_m: number };
+    water_depth_map: { value_65535_m: number };
+    flowmap: { vmax_m_s: number };
+  }>(
     p('phase2_water', 'water_bodies.json'),
   );
   const env = readJson<{ heightmap_graded: { value_0_m: number; value_65535_m: number } }>(p('phase5_environment', 'environment_meta.json'));
@@ -178,7 +184,9 @@ export async function readForestSources(dir: string): Promise<ForestSources> {
     vegetation: readJson(p('phase3_vegetation', 'vegetation_instances.json')),
     rocks: readJson(p('phase4_rocks', 'rock_instances.json')),
     layout: readJson(p('phase5_environment', 'environment_layout.json')),
+    waterScale: { maxDepth: water.water_depth_map.value_65535_m, maxSpeed: water.flowmap.vmax_m_s },
     files: {
+      flowMap: p('phase2_water', 'flowmap_1025.png'),
       water: p('phase2_water', 'water_meshes.glb'),
       vegetation: p('phase3_vegetation', 'vegetation_assets.glb'),
       rocks: p('phase4_rocks', 'rock_assets.glb'),

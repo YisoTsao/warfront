@@ -60,6 +60,9 @@ assets/
 | LOD 資料庫物件 | `lod_library = true` | 只提供網格，不擺在場景裡 |
 | 網格（mesh） | `cull_distance` | 超過這個距離（公尺）不畫，用於蕨類、小石頭等小物件 |
 | 場景（scene） | `frontline_build` | 建置參數：`chunk_size`、`terrain_chunk_size`、`stream_distance`、`lod_distances`、`shared_library`；命令列參數優先 |
+| 場景（scene） | `frontline_water` | 水面資料：`flow_texture`、`depth_texture`（GLB 內的貼圖名稱）、`origin`、`size`、`max_depth`、`max_speed` → `manifest.water` |
+| 材質 | `frontline_shader = "water"` / `"waterfall"` | 前端換成水面 shader（流動、深淺、天空反射、泡沫） |
+| 材質 | `frontline_foliage = true` | 葉片：前端把法線改成從樹冠往外、不依正反面翻轉，並加一點透光 |
 
 ### 3.3 LOD
 
@@ -105,11 +108,11 @@ bun run maps:forest -- --source ../blender-mcp-asset-generator/output
 
 1. **組成來源 GLB**（`assets/blender-source/exports/forest-valley.glb`，不進版控，可隨時重建）：
    - 地形：phase5 整地後的 1025 高度圖每隔一點取樣（513 × 513，約 1 m 間距），切成 4 × 4 視覺分塊；同一組樣本輸出成碰撞高度場。底色貼圖（2048²）依植被密度、坡度、碎石、道路、壕溝、營地與水域畫成。
-   - 水面與瀑布：`water_meshes.glb`；水域判定由水面遮罩與水深圖切成 8 m 方塊（深度超過 1.3 m 為深水）。
+   - 水面與瀑布：`water_meshes.glb`；水域判定由水面遮罩與水深圖切成 8 m 方塊（深度超過 1.3 m 為深水）。水面材質標記 `frontline_shader = water / waterfall`，Blender 的流向圖（流向、流速、泡沫）與水深圖轉成兩張 1024² 貼圖，經場景的 `frontline_water` 設定寫進 `manifest.water`，前端的水面 shader 使用。
    - 植被與岩石：依 `vegetation_instances.json`、`rock_instances.json` 擺放（Blender 座標 Z 朝上、公分 → 本專案 Y 朝上、公尺），套用 phase5 在 Blender 內做的清理（道路、壕溝、橋、營地附近移除，伐木場 75% 的樹砍掉）並依整地高度差重新貼地。LOD 由 meshoptimizer 產生：岩石 LOD0 簡化到 30%、LOD1 6%；樹的葉片卡依間隔保留 30–40%。
    - 建築：`structures.glb`（道路網格不匯入，已畫進地形底色）；碰撞用 `environment_layout.json` 的方塊與膠囊（膠囊的軸向由結構網格頂點的主成分推算）。樹幹、原木、岩石另外加上縮小的方塊碰撞，避免隱形牆。
    - 遊戲標記：兩隊出生點用 phase5 的 HQ 出生建議點（南方 HQ = alpha、北方 HQ = bravo）；征服據點 A 橋梁、B 農舍、C 教堂遺跡、D 伐木場；敵方基地禁區；地圖四周只擋人的邊界牆。
-   - 材質：Blender 的程序化材質匯出後是白色，依原始材質腳本的顏色重新指定；葉片改成 alpha 測試並提高亮度（Blender 靠半透明散射提亮）。
+   - 材質：Blender 的程序化材質匯出後是白色，依原始材質腳本的顏色重新指定；葉片改成 alpha 測試並提高亮度（Blender 靠半透明散射提亮），標記 `frontline_foliage`。
    - 太陽：Blender 燈光預設 `noon`（仰角 58°、方位 165°）。
 2. **map-build**：產生 `assets/maps/forest-valley/`（提交到 repo；執行期資料約 11 MB，不走 LFS，見 `.gitattributes`）。
 
@@ -120,6 +123,8 @@ bun run maps:forest -- --source ../blender-mcp-asset-generator/output
 - 前端：地形分塊先載入；細節分塊在 `streamDistance` 內載入，超出 1.3 倍後卸載並釋放 GPU 資源；同時最多 3 個下載。玩家出生前會先載入必要分塊。
 - 植被品質會改變串流距離（低 60%、中 85%、高 100%）。
 - 伺服器只讀 `map-manifest.json` 與 `collision.json`，不載入視覺分塊。
+- 天空：物理天空（Rayleigh／Mie 散射）畫進立方體貼圖，當作背景與 PMREM 環境貼圖；亮度以地圖霧色為目標自動校正，霧色取天空地平線的顏色。
+- 水面 shader（`WaterMaterial.ts`）：兩相位 flowmap 沿流向推動波紋、依水深吸收顏色並在岸邊淡出、Fresnel 反射天空與太陽、急流與岸邊的條紋泡沫；遠處波紋減弱避免閃爍。瀑布沿 UV 往下流。
 - 有共用網格庫時，玩家出生前先載入 `library.glb`；分塊載入後把佔位網格換成網格庫的幾何與材質。共用的幾何、材質與貼圖在卸載分塊時不釋放。
 
 ## 7. 尚未實作

@@ -124,16 +124,19 @@ function fixMaterial(material: Material): void {
   if (material.getName().startsWith('M_Foliage_')) {
     // 葉片卡：用 alpha 測試取代混合，避免數千張卡片排序問題，也能投射陰影
     material.setAlphaMode('MASK').setAlphaCutoff(0.45).setDoubleSided(true).setMetallicFactor(0).setRoughnessFactor(0.75);
+    material.setExtras({ frontline_foliage: true });
     return;
   }
   if (material.getName() === 'M_Water') {
-    // Blender 的水面材質用高度圖做岸邊漸淡，網頁版不需要
+    // Blender 的水面材質用高度圖做岸邊漸淡，網頁版不需要；前端以 frontline_shader 換成水面 shader
     material.setBaseColorTexture(null).setNormalTexture(null).setMetallicRoughnessTexture(null);
     material.setBaseColorFactor([...spec!.color, 0.78]).setAlphaMode('BLEND').setRoughnessFactor(0.06).setMetallicFactor(0);
+    material.setExtras({ frontline_shader: 'water' });
     return;
   }
   if (material.getName() === 'M_Waterfall') {
     material.setBaseColorFactor([...spec!.color, 0.55]).setAlphaMode('BLEND').setDoubleSided(true).setMetallicFactor(0);
+    material.setExtras({ frontline_shader: 'waterfall' });
     return;
   }
   if (spec) {
@@ -708,6 +711,41 @@ export async function importForestValley(options: ForestImportOptions): Promise<
         hemisphere_intensity: 0.9,
       }),
   );
+
+  // ---- 水面流向與深度（前端水面 shader 使用）----
+  // 兩張都是不透明的 RGB：有些瀏覽器會把 alpha 為 0 的像素的 RGB 清掉，所以泡沫不放在 alpha
+  const flowRaw = await sharp(src.files.flowMap).ensureAlpha().resize(1024, 1024).raw().toBuffer({ resolveWithObject: true });
+  const pixels = flowRaw.info.width * flowRaw.info.height;
+  const flowBytes = Buffer.alloc(pixels * 3);
+  const depthBytes = Buffer.alloc(pixels * 3);
+  for (let i = 0; i < pixels; i++) {
+    flowBytes[i * 3] = flowRaw.data[i * 4]!;
+    // Blender 的 G 是往北（+Y）；warfront 的北方是 −Z，所以反轉成「往 +Z」
+    flowBytes[i * 3 + 1] = 255 - flowRaw.data[i * 4 + 1]!;
+    flowBytes[i * 3 + 2] = flowRaw.data[i * 4 + 2]!;
+    const r = Math.floor(i / flowRaw.info.width);
+    const c = i % flowRaw.info.width;
+    const x = -src.size / 2 + ((c + 0.5) / flowRaw.info.width) * src.size;
+    const y = src.size / 2 - ((r + 0.5) / flowRaw.info.height) * src.size;
+    depthBytes[i * 3] = Math.round(Math.min(1, src.waterDepth.sample(x, y) / src.waterScale.maxDepth) * 255);
+    depthBytes[i * 3 + 1] = flowRaw.data[i * 4 + 3]!;
+  }
+  const raw = { width: flowRaw.info.width, height: flowRaw.info.height, channels: 3 as const };
+  const flowPng = await sharp(flowBytes, { raw }).png({ compressionLevel: 9 }).toBuffer();
+  const depthPng = await sharp(depthBytes, { raw }).png({ compressionLevel: 9 }).toBuffer();
+  doc.createTexture('T_Water_Flow').setImage(flowPng).setMimeType('image/png');
+  doc.createTexture('T_Water_Depth').setImage(depthPng).setMimeType('image/png');
+  scene.setExtras({
+    ...scene.getExtras(),
+    frontline_water: {
+      flow_texture: 'T_Water_Flow',
+      depth_texture: 'T_Water_Depth',
+      origin: [-src.size / 2, -src.size / 2],
+      size: src.size,
+      max_depth: round(src.waterScale.maxDepth, 3),
+      max_speed: round(src.waterScale.maxSpeed, 3),
+    },
+  });
 
   await doc.transform(unpartition());
   for (const b of doc.getRoot().listBuffers()) {

@@ -94,6 +94,8 @@ export class ChunkStreamer {
   private visibleInstances = 0;
   /** 依畫質等級調整串流距離的倍率 */
   distanceScale = 1;
+  /** 換掉特殊材質（例如水面）；回傳 true 表示已替換 */
+  replaceMaterial: ((mesh: THREE.Mesh) => boolean) | null = null;
 
   constructor(
     private readonly manifest: MapManifest,
@@ -277,6 +279,9 @@ export class ChunkStreamer {
       const identity = matrix === null || (matrix as THREE.Matrix4).equals(new THREE.Matrix4());
       library.set(name, { parts, matrix: identity ? null : matrix });
     });
+    for (const entry of library.values()) {
+      prepareFoliage(entry.parts);
+    }
     this.library = library;
     this.libraryScene = gltf.scene;
   }
@@ -345,6 +350,9 @@ export class ChunkStreamer {
       }
       const terrain = entry.chunk.id.startsWith('terrain');
       group.traverse((o) => {
+        if (o instanceof THREE.Mesh && this.replaceMaterial?.(o)) {
+          return;
+        }
         if (o instanceof THREE.Mesh) {
           const transparent = Array.isArray(o.material) ? o.material.some((m) => m.transparent) : o.material.transparent;
           o.userData.castShadow = !terrain && !transparent;
@@ -412,6 +420,57 @@ export class ChunkStreamer {
       }
     }
     this.visibleInstances = visible;
+  }
+}
+
+/**
+ * 葉片卡（材質 extras.frontline_foliage）：
+ * - 法線改成從樹冠中心往外（混合原本的法線），雙面葉片的背面不會變黑，樹冠像一團受光的體積；
+ * - 不依正反面翻轉法線；
+ * - 以貼圖本身當自發光的一小部分，近似葉片透光。
+ */
+function prepareFoliage(parts: LibraryPart[]): void {
+  for (const part of parts) {
+    const materials = Array.isArray(part.material) ? part.material : [part.material];
+    const material = materials[0] as THREE.MeshStandardMaterial | undefined;
+    if (!material?.userData.frontline_foliage || part.geometry.userData.foliagePrepared) {
+      continue;
+    }
+    part.geometry.userData.foliagePrepared = true;
+    const geometry = part.geometry;
+    const position = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+    if (!position) {
+      continue;
+    }
+    geometry.computeBoundingBox();
+    const center = geometry.boundingBox!.getCenter(new THREE.Vector3());
+    // 中心稍微往下，樹冠下緣的法線也朝外而不是朝下
+    center.y -= (geometry.boundingBox!.max.y - geometry.boundingBox!.min.y) * 0.15;
+    const out = new Float32Array(position.count * 3);
+    const p = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    for (let i = 0; i < position.count; i++) {
+      p.fromBufferAttribute(position, i).sub(center).normalize();
+      if (normal) {
+        n.fromBufferAttribute(normal, i).normalize();
+        p.lerp(n, 0.3).normalize();
+      }
+      out.set([p.x, p.y, p.z], i * 3);
+    }
+    geometry.setAttribute('normal', new THREE.BufferAttribute(out, 3));
+    for (const m of materials as THREE.MeshStandardMaterial[]) {
+      m.emissive = new THREE.Color(0.22, 0.24, 0.18);
+      m.emissiveMap = m.map;
+      m.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <normal_fragment_begin>',
+          THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0'),
+        );
+      };
+      m.customProgramCacheKey = () => 'frontline-foliage';
+      m.needsUpdate = true;
+    }
   }
 }
 

@@ -49,7 +49,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 119036
+      "byteLength": 119184
     },
     {
       "id": "detail-0-1",
@@ -68,7 +68,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 245176
+      "byteLength": 245324
     },
     {
       "id": "detail-0-2",
@@ -87,7 +87,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 202872
+      "byteLength": 203024
     },
     {
       "id": "detail-0-3",
@@ -106,7 +106,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 144788
+      "byteLength": 144940
     },
     {
       "id": "detail-1-0",
@@ -125,7 +125,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 303032
+      "byteLength": 303180
     },
     {
       "id": "detail-1-1",
@@ -144,7 +144,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 260392
+      "byteLength": 260580
     },
     {
       "id": "detail-1-2",
@@ -163,7 +163,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 278460
+      "byteLength": 278612
     },
     {
       "id": "detail-1-3",
@@ -182,7 +182,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 205312
+      "byteLength": 205460
     },
     {
       "id": "detail-2-0",
@@ -201,7 +201,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 178904
+      "byteLength": 179056
     },
     {
       "id": "detail-2-1",
@@ -220,7 +220,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 445736
+      "byteLength": 445924
     },
     {
       "id": "detail-2-2",
@@ -239,7 +239,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 319368
+      "byteLength": 319596
     },
     {
       "id": "detail-2-3",
@@ -258,7 +258,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 305856
+      "byteLength": 306008
     },
     {
       "id": "detail-3-0",
@@ -277,7 +277,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 151064
+      "byteLength": 151212
     },
     {
       "id": "detail-3-1",
@@ -296,7 +296,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 169704
+      "byteLength": 169852
     },
     {
       "id": "detail-3-2",
@@ -315,7 +315,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 191080
+      "byteLength": 191268
     },
     {
       "id": "detail-3-3",
@@ -334,7 +334,7 @@
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 148472
+      "byteLength": 148620
     },
     {
       "id": "terrain-0-0",
@@ -352,7 +352,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 181624
+      "byteLength": 181776
     },
     {
       "id": "terrain-0-1",
@@ -370,7 +370,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 175668
+      "byteLength": 175820
     },
     {
       "id": "terrain-0-2",
@@ -388,7 +388,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 175704
+      "byteLength": 175852
     },
     {
       "id": "terrain-0-3",
@@ -406,7 +406,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 181876
+      "byteLength": 182024
     },
     {
       "id": "terrain-1-0",
@@ -424,7 +424,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 167520
+      "byteLength": 167672
     },
     {
       "id": "terrain-1-1",
@@ -442,7 +442,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 173032
+      "byteLength": 173184
     },
     {
       "id": "terrain-1-2",
@@ -460,7 +460,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 167672
+      "byteLength": 167824
     },
     {
       "id": "terrain-1-3",
@@ -478,7 +478,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 170100
+      "byteLength": 170248
     },
     {
       "id": "terrain-2-0",
@@ -496,7 +496,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 171240
+      "byteLength": 171388
     },
     {
       "id": "terrain-2-1",
@@ -514,7 +514,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 166784
+      "byteLength": 166932
     },
     {
       "id": "terrain-2-2",
@@ -532,7 +532,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 174448
+      "byteLength": 174600
     },
     {
       "id": "terrain-2-3",
@@ -550,7 +550,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 169336
+      "byteLength": 169484
     },
     {
       "id": "terrain-3-0",
@@ -568,7 +568,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 179976
+      "byteLength": 180124
     },
     {
       "id": "terrain-3-1",
@@ -586,7 +586,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 179096
+      "byteLength": 179244
     },
     {
       "id": "terrain-3-2",
@@ -604,7 +604,7 @@
         ]
       },
       "priority": 0,
-      "byteLength": 181784
+      "byteLength": 181936
     },
     {
       "id": "terrain-3-3",
@@ -622,13 +622,24 @@
         ]
       },
       "priority": 0,
-      "byteLength": 180112
+      "byteLength": 180260
     }
   ],
   "collision": "collision.json",
   "library": {
     "path": "library.glb",
-    "byteLength": 1426656
+    "byteLength": 1426780
+  },
+  "water": {
+    "flowMap": "textures/T_Water_Flow-6de1a7bd8d.png",
+    "depthMap": "textures/T_Water_Depth-b04d5be574.png",
+    "origin": [
+      -250,
+      -250
+    ],
+    "size": 500,
+    "maxDepth": 3.658,
+    "maxSpeed": 1.692
   },
   "spawns": [
     {
@@ -6042,7 +6053,7 @@
   ],
   "source": {
     "file": "../../blender-source/exports/forest-valley.glb",
-    "generatedAt": "2026-11-04T03:16:42.914Z",
+    "generatedAt": "2026-11-04T09:31:55.040Z",
     "generator": "@frontline/map-build"
   }
 }

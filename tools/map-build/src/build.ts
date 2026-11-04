@@ -476,6 +476,55 @@ const TEXTURE_SLOTS = [
   ['emissiveMap', (m: Material) => m.getEmissiveTexture(), (m: Material) => m.setEmissiveTexture(null)],
 ] as const;
 
+/** 把一張圖寫到 textures/（依內容雜湊命名），回傳相對路徑。 */
+function writeTextureFile(outDir: string, name: string, image: Uint8Array, mime: string, written: Map<string, number>): string {
+  const ext = ImageUtils.mimeTypeToExtension(mime);
+  const base = name.replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 40) || 'texture';
+  const path = `textures/${base}-${createHash('sha1').update(image).digest('hex').slice(0, 10)}.${ext}`;
+  if (!written.has(path)) {
+    const file = join(outDir, path);
+    if (!existsSync(file)) {
+      mkdirSync(join(outDir, 'textures'), { recursive: true });
+      writeFileSync(file, image);
+    }
+    written.set(path, image.byteLength);
+  }
+  return path;
+}
+
+/**
+ * 來源場景的 extras.frontline_water 指定流向圖與水深圖（以貼圖名稱指向 GLB 內的圖），
+ * 寫到 textures/ 並轉成 manifest.water。
+ */
+function waterSurfaceFrom(source: Document, settings: Record<string, unknown> | undefined, outDir: string, written: Map<string, number>, warnings: string[]): MapManifest['water'] {
+  if (!settings) {
+    return undefined;
+  }
+  const textures = source.getRoot().listTextures();
+  const image = (name: unknown) => {
+    const texture = textures.find((t) => t.getName() === name);
+    return texture?.getImage() ? { image: texture.getImage()!, mime: texture.getMimeType() || 'image/png', name: texture.getName() } : null;
+  };
+  const flow = image(settings.flow_texture);
+  const depth = image(settings.depth_texture);
+  const origin = settings.origin;
+  const size = num(settings.size);
+  const maxDepth = num(settings.max_depth);
+  const maxSpeed = num(settings.max_speed);
+  if (!flow || !depth || !Array.isArray(origin) || origin.length !== 2 || !size || !maxDepth || !maxSpeed) {
+    warnings.push('frontline_water 設定不完整（需要 flow_texture、depth_texture、origin、size、max_depth、max_speed），已略過水面資料');
+    return undefined;
+  }
+  return {
+    flowMap: writeTextureFile(outDir, flow.name, flow.image, flow.mime, written),
+    depthMap: writeTextureFile(outDir, depth.name, depth.image, depth.mime, written),
+    origin: [Number(origin[0]), Number(origin[1])],
+    size,
+    maxDepth,
+    maxSpeed,
+  };
+}
+
 /**
  * 把材質用到的貼圖寫到 textures/（依內容雜湊命名，同一張只寫一次），
  * 材質改成在 extras.frontline_textures 記錄 { map: 'textures/xxx.png', ... }。
@@ -487,19 +536,8 @@ function externalizeTextures(doc: Document, outDir: string, written: Map<string,
       return null;
     }
     const mime = texture.getMimeType() || ImageUtils.getMimeType(image) || 'image/png';
-    const ext = ImageUtils.mimeTypeToExtension(mime);
-    const base = (texture.getName() || texture.getURI().replace(/\.[a-z0-9]+$/i, '') || 'texture').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 40);
-    const hash = createHash('sha1').update(image).digest('hex').slice(0, 10);
-    const path = `textures/${base}-${hash}.${ext}`;
-    if (!written.has(path)) {
-      const file = join(outDir, path);
-      if (!existsSync(file)) {
-        mkdirSync(join(outDir, 'textures'), { recursive: true });
-        writeFileSync(file, image);
-      }
-      written.set(path, image.byteLength);
-    }
-    return path;
+    const name = texture.getName() || texture.getURI().replace(/\.[a-z0-9]+$/i, '') || 'texture';
+    return writeTextureFile(outDir, name, image, mime, written);
   };
   for (const material of doc.getRoot().listMaterials()) {
     const refs: Record<string, string> = {};
@@ -735,6 +773,9 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     log(`分塊 ${id}：${entry.indices.length} 個物件、${instancedGroups} 組 instancing、${(glb.byteLength / 1024).toFixed(0)} KB`);
   }
 
+  // ---- 水面 ----
+  const water = waterSurfaceFrom(source, (root.getDefaultScene() ?? root.listScenes()[0])?.getExtras().frontline_water as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
+
   // ---- manifest ----
   const minY = Math.min(
     mapBounds.min[1],
@@ -755,6 +796,7 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     chunks,
     collision: 'collision.json',
     ...(library ? { library: { path: library.path, byteLength: library.bytes } } : {}),
+    ...(water ? { water } : {}),
     spawns,
     objectives,
     restrictedAreas,

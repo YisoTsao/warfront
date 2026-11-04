@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { ChunkStreamer, type StreamingStats } from './ChunkStreamer';
 import { applyEnvironment, followShadow, type EnvironmentHandles } from './Environment';
 import { buildGrayboxVisuals } from './GrayboxMap';
+import { WaterMaterials } from './WaterMaterial';
 
 export { AVAILABLE_MAPS } from './maps';
 
@@ -28,7 +29,9 @@ export class MapRuntime {
     private readonly environment: EnvironmentHandles,
     private readonly streamer: ChunkStreamer | null,
     private readonly graybox: THREE.Group | null,
+    private readonly water: WaterMaterials,
   ) {}
+  private time = 0;
 
   static async load(
     mapId: string,
@@ -49,7 +52,18 @@ export class MapRuntime {
       return response.json() as Promise<unknown>;
     });
     const sim = new SimWorld(data.manifest, data.collision, stepSeconds);
-    const environment = applyEnvironment(scene, data.manifest.environment);
+    const environment = applyEnvironment(scene, data.manifest.environment, renderer);
+    const [sx, sy, sz] = data.manifest.environment.sunDirection;
+    const water = new WaterMaterials(
+      {
+        sunDirection: new THREE.Vector3(-sx, -sy, -sz),
+        sunColor: new THREE.Color(data.manifest.environment.sunColor),
+        horizon: environment.horizonColor,
+        zenith: environment.zenithColor,
+      },
+      data.manifest.water,
+      data.baseUrl,
+    );
     environment.sun.castShadow = shadows.cast;
     let streamer: ChunkStreamer | null = null;
     let graybox: THREE.Group | null = null;
@@ -58,11 +72,12 @@ export class MapRuntime {
     } else {
       streamer = new ChunkStreamer(data.manifest, data.baseUrl, scene, renderer, shadows);
       streamer.distanceScale = streamScale;
+      streamer.replaceMaterial = (mesh) => water.apply(mesh);
       const start = focus ?? new THREE.Vector3(...(data.manifest.spawns[0]?.position ?? [0, 0, 0]));
       await streamer.preload(start, (done, total) => onProgress?.({ stage: 'chunks', done, total }));
     }
     onProgress?.({ stage: 'ready', done: 1, total: 1 });
-    return new MapRuntime(data.manifest, sim, scene, environment, streamer, graybox);
+    return new MapRuntime(data.manifest, sim, scene, environment, streamer, graybox, water);
   }
 
   get id(): string {
@@ -77,6 +92,8 @@ export class MapRuntime {
   /** 每畫格呼叫：陰影跟隨；每 0.25 秒更新一次分塊串流與 LOD。 */
   update(focus: THREE.Vector3, frameSeconds: number): void {
     this.shadowFocus.copy(focus);
+    this.time += frameSeconds;
+    this.water.update(this.time);
     followShadow(this.environment.sun, this.shadowFocus, this.manifest.environment.sunDirection);
     this.streamTimer -= frameSeconds;
     if (this.streamTimer <= 0) {
@@ -108,6 +125,7 @@ export class MapRuntime {
       this.scene.remove(this.graybox);
     }
     this.environment.dispose();
+    this.water.dispose();
     this.sim.dispose();
   }
 }

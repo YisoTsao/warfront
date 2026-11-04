@@ -88,6 +88,24 @@ export const EnvironmentSchema = z.object({
 });
 export type MapEnvironment = z.infer<typeof EnvironmentSchema>;
 
+/**
+ * 水面資料（森林谷地由 Blender 的水體模擬輸出）：前端的水面 shader 用來畫流動、深淺顏色與泡沫。
+ * 兩張貼圖都以整張地圖為範圍，第 0 列在 origin 的 Z（北邊）、第 0 欄在 origin 的 X（西邊）。
+ */
+export const WaterSurfaceSchema = z.object({
+  /** RGB：R、G = 流向（世界 +X、+Z 方向，×0.5+0.5）；B = 流速 / maxSpeed */
+  flowMap: z.string(),
+  /** RGB：R = 水深 / maxDepth；G = 泡沫 */
+  depthMap: z.string(),
+  /** 貼圖左上角（最小 X、最小 Z） */
+  origin: z.tuple([z.number(), z.number()]),
+  /** 貼圖涵蓋的邊長（公尺） */
+  size: z.number().positive(),
+  maxDepth: z.number().positive(),
+  maxSpeed: z.number().positive(),
+});
+export type WaterSurface = z.infer<typeof WaterSurfaceSchema>;
+
 export const MapManifestSchema = z.object({
   schemaVersion: z.literal(MAP_SCHEMA_VERSION),
   id: z.string().regex(/^[a-z0-9-]+$/),
@@ -101,6 +119,8 @@ export const MapManifestSchema = z.object({
   collision: z.string(),
   /** 共用網格庫（GLB）：分塊內 extras.library_mesh 指向這裡的網格；先於分塊載入 */
   library: z.object({ path: z.string(), byteLength: z.number().int().nonnegative().optional() }).optional(),
+  /** 水面流向與深度（可選；沒有時水面用固定顏色） */
+  water: WaterSurfaceSchema.optional(),
   spawns: z.array(SpawnPointSchema).min(1),
   objectives: z.array(ObjectiveSchema).default([]),
   restrictedAreas: z.array(RestrictedAreaSchema).default([]),
