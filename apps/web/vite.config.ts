@@ -11,6 +11,10 @@ const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.glb': 'model/gltf-binary',
   '.ktx2': 'image/ktx2',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.js': 'text/javascript',
   '.wasm': 'application/wasm',
 };

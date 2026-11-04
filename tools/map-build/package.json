@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "build-map": "tsx src/cli.ts",
-    "sample": "tsx src/sample/generateSampleValley.ts"
+    "sample": "tsx src/sample/generateSampleValley.ts",
+    "forest": "tsx src/forest/cli.ts"
   },
   "dependencies": {
     "@frontline/map-schema": "workspace:*",
     "@gltf-transform/core": "4.5.1",
     "@gltf-transform/extensions": "4.5.1",
     "@gltf-transform/functions": "4.5.1",
-    "meshoptimizer": "1.3.0"
+    "meshoptimizer": "1.3.0",
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

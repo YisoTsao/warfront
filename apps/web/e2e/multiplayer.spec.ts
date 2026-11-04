@@ -192,6 +192,10 @@ test('伺服器列表顯示進行中的房間', async ({ browser }) => {
 });
 
 test('16 人滿房（1 真人 + 15 bot）：伺服器 tick 穩定，bot 交戰', async ({ browser, request }) => {
+  // 前面測試的房間可能還在保留重連席位（最多 30 秒）；等它關閉，避免配對進去而沒有 bot
+  await expect
+    .poll(async () => ((await (await request.get('http://127.0.0.1:2567/rooms')).json()) as Array<{ metadata?: { mode?: string; mapId?: string } }>).filter((r) => r.metadata?.mode === 'tdm' && r.metadata?.mapId === 'graybox').length, { timeout: 45_000, intervals: [1000] })
+    .toBe(0);
   const a = await joinMatch(browser, { name: '滿房', bots: 16 });
   await deploy(a.page);
   await expect.poll(() => net(a.page).then((n) => n.remotes), { timeout: 20_000 }).toBe(15);

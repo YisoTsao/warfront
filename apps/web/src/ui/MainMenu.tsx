@@ -18,7 +18,7 @@ interface MainMenuProps {
 export function MainMenu({ profile, onProfileChange, onChoose }: MainMenuProps) {
   const [name, setName] = useState(profile.name);
   const [mapId, setMapId] = useState<string>(AVAILABLE_MAPS[0].id);
-  const [matchMap, setMatchMap] = useState<string>(AVAILABLE_MAPS[1].id);
+  const [matchMap, setMatchMap] = useState<string>(AVAILABLE_MAPS[0].id);
   const [bots, setBots] = useState(8);
   const [classId, setClassId] = useState('assault');
   const [primaryId, setPrimaryId] = useState('ar_carbine');

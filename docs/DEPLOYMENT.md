@@ -16,9 +16,10 @@ VITE_GAME_SERVER_URL=wss://game.example.com bun run build
 ```
 
 - 輸出：`apps/web/dist`（含 `/maps/` 地圖資料與 `/basis/` 轉碼器）。
-- 平台設定：建置指令 `bun install && bun run maps:sample && bun run build`（正式地圖改成實際的 map-build 指令）、輸出目錄 `apps/web/dist`、單頁應用不需要額外路由。
+- 平台設定：建置指令 `bun install && bun run maps:sample && bun run build`、輸出目錄 `apps/web/dist`、單頁應用不需要額外路由。
+- 地圖資料：`assets/maps/forest-valley`（建置後約 11 MB）直接存在 Git，不走 LFS，部署平台不需要額外設定。`assets/blender-source` 的原始檔仍走 LFS。
 - 快取：`/assets/*` 檔名含雜湊，可以長期快取；`/maps/*` 每次換地圖版本時要讓快取失效（或在 id 中加版本）。
-- `.glb` 的 Content-Type：`model/gltf-binary`；`.wasm`：`application/wasm`。
+- `.glb` 的 Content-Type：`model/gltf-binary`；`.wasm`：`application/wasm`；`/maps/*/textures/` 有 PNG 與 JPEG。
 
 ## 3. 對戰伺服器
 

@@ -99,6 +99,8 @@ export const MapManifestSchema = z.object({
   chunks: z.array(ChunkSchema),
   /** 相對路徑，指向 MapCollision JSON */
   collision: z.string(),
+  /** 共用網格庫（GLB）：分塊內 extras.library_mesh 指向這裡的網格；先於分塊載入 */
+  library: z.object({ path: z.string(), byteLength: z.number().int().nonnegative().optional() }).optional(),
   spawns: z.array(SpawnPointSchema).min(1),
   objectives: z.array(ObjectiveSchema).default([]),
   restrictedAreas: z.array(RestrictedAreaSchema).default([]),

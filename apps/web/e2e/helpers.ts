@@ -25,9 +25,9 @@ export async function openGame(page: Page, mapId = 'graybox'): Promise<string[]>
 }
 
 /** 點「點擊開始」並等待 Pointer Lock 生效。 */
-export async function startPlaying(page: Page): Promise<void> {
+export async function startPlaying(page: Page, timeout = 5_000): Promise<void> {
   await page.getByRole('button', { name: '點擊開始' }).click();
-  await expect.poll(() => snapshot(page).then((s) => s.pointerLocked)).toBe(true);
+  await expect.poll(() => snapshot(page).then((s) => s.pointerLocked), { timeout }).toBe(true);
 }
 
 export function snapshot(page: Page): Promise<Snapshot> {

@@ -1,6 +1,7 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { Document, Logger, NodeIO, type Mesh, type Node } from '@gltf-transform/core';
+import { Document, ImageUtils, Logger, NodeIO, type Material, type Mesh, type Node, type Texture } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshGPUInstancing } from '@gltf-transform/extensions';
 import { cloneDocument, dedup, meshopt, prune } from '@gltf-transform/functions';
 import {
@@ -34,13 +35,27 @@ export interface BuildOptions {
   instanceMin?: number;
   /** LOD 切換距離（公尺），依層級排列 */
   lodDistances?: number[];
+  /** 細節分塊的串流距離（公尺），預設為 chunkSize × 2.5 */
+  streamDistance?: number;
+  /**
+   * 貼圖另存到 textures/，分塊材質只記錄路徑（extras.frontline_textures），
+   * 前端以快取共用同一張貼圖。預設開啟；關閉則把貼圖嵌在每個分塊裡。
+   */
+  sharedTextures?: boolean;
+  /**
+   * 重複出現的網格（含其 LOD）只寫一次到 library.glb，分塊只存放實例變換。
+   * 也可以在來源場景的 frontline_build.shared_library 開啟。
+   */
+  sharedLibrary?: boolean;
   log?: (message: string) => void;
 }
 
 export interface BuildReport {
   manifestPath: string;
   chunks: Array<{ id: string; bytes: number; nodes: number; instancedGroups: number }>;
-  colliders: { boxes: number; trimeshes: number; triangles: number };
+  textures: Array<{ path: string; bytes: number }>;
+  library: { path: string; bytes: number; meshes: number } | null;
+  colliders: { boxes: number; trimeshes: number; triangles: number; heightfields: number };
   spawns: number;
   objectives: number;
   warnings: string[];
@@ -171,6 +186,9 @@ function colliderFromNode(node: Node, role: CollectionRole, warnings: string[]):
     role === 'COLLISION_Bullet' ? 'bullet' : layerExtra === 'movement' || layerExtra === 'bullet' ? layerExtra : 'both';
   const material = str(extras.material);
   const m = node.getWorldMatrix();
+  if (extras.collider === 'heightfield') {
+    return heightfieldFromNode(node, layer, material, warnings);
+  }
   const wantsBox = extras.collider === 'box' || /^(UBX|BOX)_/i.test(node.getName());
   if (wantsBox) {
     const local = meshLocalBounds(mesh);
@@ -225,6 +243,60 @@ function colliderFromNode(node: Node, role: CollectionRole, warnings: string[]):
   return { kind: 'trimesh', name: node.getName(), vertices, indices, layer, ...(material ? { material } : {}) };
 }
 
+/**
+ * 規則格狀網格 → 高度場。頂點必須依列優先排列（列沿 +Z、欄沿 +X），
+ * 自訂屬性 grid_rows / grid_cols 指定樣本數。
+ */
+function heightfieldFromNode(node: Node, layer: CollisionLayer, material: string | undefined, warnings: string[]): ColliderData | null {
+  const extras = node.getExtras();
+  const rows = num(extras.grid_rows);
+  const cols = num(extras.grid_cols);
+  const position = node.getMesh()?.listPrimitives()[0]?.getAttribute('POSITION');
+  if (!rows || !cols || !position || position.getCount() !== rows * cols) {
+    warnings.push(`高度場 ${node.getName()} 需要 grid_rows × grid_cols 個頂點（列優先），已略過`);
+    return null;
+  }
+  const m = node.getWorldMatrix();
+  const element: number[] = [];
+  const world = (i: number): V3 => {
+    position.getElement(i, element);
+    return transformPoint(m, element);
+  };
+  const first = world(0);
+  const lastCol = world(cols - 1);
+  const lastRow = world((rows - 1) * cols);
+  const size: [number, number] = [lastCol[0] - first[0], lastRow[2] - first[2]];
+  if (!(size[0] > 0 && size[1] > 0)) {
+    warnings.push(`高度場 ${node.getName()} 的頂點順序不是列沿 +Z、欄沿 +X，已略過`);
+    return null;
+  }
+  const heights: number[] = new Array(rows * cols);
+  const tolerance = Math.min(size[0] / (cols - 1), size[1] / (rows - 1)) * 0.01;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const p = world(r * cols + c);
+      const ex = first[0] + (size[0] * c) / (cols - 1);
+      const ez = first[2] + (size[1] * r) / (rows - 1);
+      if (Math.abs(p[0] - ex) > tolerance || Math.abs(p[2] - ez) > tolerance) {
+        warnings.push(`高度場 ${node.getName()} 不是規則格狀（第 ${r} 列第 ${c} 欄偏移），已略過`);
+        return null;
+      }
+      heights[r * cols + c] = round(p[1], 3);
+    }
+  }
+  return {
+    kind: 'heightfield',
+    name: node.getName(),
+    origin: [round(first[0], 4), round(first[2], 4)],
+    size: [round(size[0], 4), round(size[1], 4)],
+    rows,
+    cols,
+    heights,
+    layer,
+    ...(material ? { material } : {}),
+  };
+}
+
 function hexColor(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
 }
@@ -253,8 +325,11 @@ function environmentFrom(nodes: Classified[]): MapEnvironment {
 /**
  * 在分塊文件裡，把共用同一網格的物件合併成 EXT_mesh_gpu_instancing；
  * 名稱為 X_LOD0 的網格若有 X_LOD1，另外建立一組共用同樣變換的 LOD1 節點。
+ *
+ * library 不為 null 時，名單內的網格一律合併（即使只有 1 個），節點改掛一個極小的佔位網格，
+ * 並在 extras.library_mesh 記錄網格名稱；前端從 library.glb 取得共用的幾何與材質。
  */
-function instanceAndLod(doc: Document, minCount: number, lodDistances: number[]): number {
+function instanceAndLod(doc: Document, minCount: number, lodDistances: number[], library: Set<string> | null): number {
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
   if (!scene) {
     return 0;
@@ -271,8 +346,21 @@ function instanceAndLod(doc: Document, minCount: number, lodDistances: number[])
   }
   const ext = doc.createExtension(EXTMeshGPUInstancing).setRequired(true);
   const buffer = doc.getRoot().listBuffers()[0];
+  let placeholder: Mesh | null = null;
+  const placeholderMesh = (): Mesh => {
+    // 包圍盒剛好是 [-1, 1]：Meshopt 量化時的修正變換為單位矩陣，不會改到實例變換
+    placeholder ??= doc
+      .createMesh('library_placeholder')
+      .addPrimitive(
+        doc
+          .createPrimitive()
+          .setAttribute('POSITION', doc.createAccessor().setType('VEC3').setArray(new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1, 1])).setBuffer(buffer ?? null)),
+      );
+    return placeholder;
+  };
   let instanced = 0;
   for (const [mesh, nodes] of groups) {
+    const fromLibrary = library?.has(mesh.getName()) ?? false;
     const lod = parseLodName(mesh.getName());
     const lodMeshes: Mesh[] = [mesh];
     if (lod?.level === 0) {
@@ -286,8 +374,9 @@ function instanceAndLod(doc: Document, minCount: number, lodDistances: number[])
     }
     const lodExtras = (level: number) =>
       lod && lodMeshes.length > 1 ? { lod_group: lod.base, lod_level: level, lod_distances: lodDistances.slice(0, lodMeshes.length - 1) } : {};
+    const cullDistance = num(mesh.getExtras().cull_distance);
 
-    if (nodes.length < minCount) {
+    if (!fromLibrary && nodes.length < minCount) {
       // 不合併，但仍為 LOD 建立兄弟節點
       if (lodMeshes.length > 1) {
         for (const node of nodes) {
@@ -325,9 +414,14 @@ function instanceAndLod(doc: Document, minCount: number, lodDistances: number[])
         .setAttribute('SCALE', accessors.SCALE);
       const node = doc
         .createNode(lodMesh.getName())
-        .setMesh(lodMesh)
+        .setMesh(fromLibrary ? placeholderMesh() : lodMesh)
         .setExtension('EXT_mesh_gpu_instancing', batch)
-        .setExtras({ instance_count: nodes.length, ...lodExtras(level) });
+        .setExtras({
+          instance_count: nodes.length,
+          ...lodExtras(level),
+          ...(fromLibrary ? { library_mesh: lodMesh.getName() } : {}),
+          ...(cullDistance ? { cull_distance: cullDistance } : {}),
+        });
       scene.addChild(node);
     });
     for (const node of nodes) {
@@ -341,11 +435,91 @@ function instanceAndLod(doc: Document, minCount: number, lodDistances: number[])
   return instanced;
 }
 
+/** 共用網格庫：每個網格（含 LOD）一個節點，放在原點。 */
+async function writeLibrary(source: Document, names: Set<string>, outDir: string, compress: boolean, textures: Map<string, number>): Promise<{ path: string; bytes: number; meshes: number }> {
+  const io = createIO();
+  const doc = cloneDocument(source);
+  doc.setLogger(new Logger(Logger.Verbosity.ERROR));
+  const root = doc.getRoot();
+  for (const scn of root.listScenes()) {
+    scn.dispose();
+  }
+  for (const node of root.listNodes()) {
+    node.dispose();
+  }
+  const scene = doc.createScene('library');
+  root.setDefaultScene(scene);
+  let meshes = 0;
+  for (const mesh of root.listMeshes()) {
+    if (names.has(mesh.getName())) {
+      scene.addChild(doc.createNode(mesh.getName()).setMesh(mesh).setExtras({ library_mesh: mesh.getName() }));
+      meshes++;
+    }
+  }
+  await doc.transform(prune({ keepLeaves: false }), dedup());
+  externalizeTextures(doc, outDir, textures);
+  // 貼圖已移到外部：保留 UV 等頂點屬性（否則 prune 會當作沒用到而刪掉）
+  await doc.transform(prune({ keepLeaves: false, keepAttributes: true }));
+  if (compress) {
+    await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
+  }
+  const glb = await io.writeBinary(doc);
+  writeFileSync(join(outDir, 'library.glb'), glb);
+  return { path: 'library.glb', bytes: glb.byteLength, meshes };
+}
+
+const TEXTURE_SLOTS = [
+  ['map', (m: Material) => m.getBaseColorTexture(), (m: Material) => m.setBaseColorTexture(null)],
+  ['normalMap', (m: Material) => m.getNormalTexture(), (m: Material) => m.setNormalTexture(null)],
+  ['roughnessMap', (m: Material) => m.getMetallicRoughnessTexture(), (m: Material) => m.setMetallicRoughnessTexture(null)],
+  ['aoMap', (m: Material) => m.getOcclusionTexture(), (m: Material) => m.setOcclusionTexture(null)],
+  ['emissiveMap', (m: Material) => m.getEmissiveTexture(), (m: Material) => m.setEmissiveTexture(null)],
+] as const;
+
+/**
+ * 把材質用到的貼圖寫到 textures/（依內容雜湊命名，同一張只寫一次），
+ * 材質改成在 extras.frontline_textures 記錄 { map: 'textures/xxx.png', ... }。
+ */
+function externalizeTextures(doc: Document, outDir: string, written: Map<string, number>): void {
+  const pathOf = (texture: Texture): string | null => {
+    const image = texture.getImage();
+    if (!image) {
+      return null;
+    }
+    const mime = texture.getMimeType() || ImageUtils.getMimeType(image) || 'image/png';
+    const ext = ImageUtils.mimeTypeToExtension(mime);
+    const base = (texture.getName() || texture.getURI().replace(/\.[a-z0-9]+$/i, '') || 'texture').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 40);
+    const hash = createHash('sha1').update(image).digest('hex').slice(0, 10);
+    const path = `textures/${base}-${hash}.${ext}`;
+    if (!written.has(path)) {
+      const file = join(outDir, path);
+      if (!existsSync(file)) {
+        mkdirSync(join(outDir, 'textures'), { recursive: true });
+        writeFileSync(file, image);
+      }
+      written.set(path, image.byteLength);
+    }
+    return path;
+  };
+  for (const material of doc.getRoot().listMaterials()) {
+    const refs: Record<string, string> = {};
+    for (const [slot, get, clear] of TEXTURE_SLOTS) {
+      const texture = get(material);
+      const path = texture ? pathOf(texture) : null;
+      if (path) {
+        refs[slot] = path;
+        clear(material);
+      }
+    }
+    if (Object.keys(refs).length > 0) {
+      material.setExtras({ ...material.getExtras(), frontline_textures: refs });
+    }
+  }
+}
+
 export async function buildMap(options: BuildOptions): Promise<BuildReport> {
   const log = options.log ?? (() => undefined);
-  const chunkSize = options.chunkSize ?? 64;
   const compress = options.compress ?? true;
-  const lodDistances = options.lodDistances ?? [70, 160];
   const warnings: string[] = [];
   const io = createIO();
   await MeshoptEncoder.ready;
@@ -354,6 +528,17 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
   log(`讀取 ${options.input}`);
   const source = await io.read(options.input);
   const root = source.getRoot();
+  // 來源檔可以在場景的自訂屬性 frontline_build 裡指定建置參數；命令列參數優先。
+  const sceneSettings = (root.getDefaultScene() ?? root.listScenes()[0])?.getExtras().frontline_build as Record<string, unknown> | undefined;
+  const chunkSize = options.chunkSize ?? num(sceneSettings?.chunk_size) ?? 64;
+  const terrainChunkSize = Math.max(chunkSize, num(sceneSettings?.terrain_chunk_size) ?? 128);
+  const streamDistance = options.streamDistance ?? num(sceneSettings?.stream_distance) ?? chunkSize * 2.5;
+  const lodSetting = sceneSettings?.lod_distances;
+  const lodDistances =
+    options.lodDistances ?? (Array.isArray(lodSetting) && lodSetting.every((v) => typeof v === 'number') ? (lodSetting as number[]) : [70, 160]);
+  const sharedTextures = options.sharedTextures ?? true;
+  const useLibrary = options.sharedLibrary ?? sceneSettings?.shared_library === true;
+  const textureFiles = new Map<string, number>();
   const allNodes = root.listNodes();
   const classified: Classified[] = [];
   allNodes.forEach((node, index) => {
@@ -455,7 +640,7 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     const b = nodeBounds.get(c.index)!;
     const cx = (b.min[0] + b.max[0]) / 2;
     const cz = (b.min[2] + b.max[2]) / 2;
-    const size = c.role === 'ENV_Terrain' ? Math.max(chunkSize, 128) : chunkSize;
+    const size = c.role === 'ENV_Terrain' ? terrainChunkSize : chunkSize;
     const ix = Math.floor((cx - mapBounds.min[0]) / size);
     const iz = Math.floor((cz - mapBounds.min[2]) / size);
     const id = `${c.role === 'ENV_Terrain' ? 'terrain' : 'detail'}-${ix}-${iz}`;
@@ -467,11 +652,34 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
 
   rmSync(options.outDir, { recursive: true, force: true });
   mkdirSync(join(options.outDir, 'chunks'), { recursive: true });
+
+  // ---- 共用網格庫 ----
+  let libraryNames: Set<string> | null = null;
+  let library: BuildReport['library'] = null;
+  if (useLibrary) {
+    const usage = new Map<Mesh, number>();
+    for (const c of visual) {
+      const mesh = c.node.getMesh();
+      if (mesh && c.role !== 'ENV_Terrain' && c.node.listChildren().length === 0) {
+        usage.set(mesh, (usage.get(mesh) ?? 0) + 1);
+      }
+    }
+    libraryNames = new Set([...usage].filter(([, n]) => n >= 2).map(([m]) => m.getName()));
+    const byName = new Set(root.listMeshes().map((m) => m.getName()));
+    for (const name of [...libraryNames]) {
+      const lod = parseLodName(name);
+      for (let level = 1; lod?.level === 0 && level < 4 && byName.has(`${lod.base}_LOD${level}`); level++) {
+        libraryNames.add(`${lod.base}_LOD${level}`);
+      }
+    }
+    library = await writeLibrary(source, libraryNames, options.outDir, compress, textureFiles);
+    log(`共用網格庫：${library.meshes} 個網格、${(library.bytes / 1024).toFixed(0)} KB`);
+  }
   const chunks: MapChunk[] = [];
   const chunkReports: BuildReport['chunks'] = [];
   for (const [id, entry] of [...chunkMembers].sort(([a], [b]) => a.localeCompare(b))) {
     const doc = cloneDocument(source);
-    doc.setLogger(new Logger(Logger.Verbosity.WARN));
+    doc.setLogger(new Logger(Logger.Verbosity.ERROR));
     const nodes = doc.getRoot().listNodes();
     const keep = new Set(entry.indices);
     const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0]!;
@@ -499,8 +707,12 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
         node.dispose();
       }
     });
-    const instancedGroups = instanceAndLod(doc, options.instanceMin ?? 4, lodDistances);
+    const instancedGroups = instanceAndLod(doc, options.instanceMin ?? 4, lodDistances, libraryNames);
     await doc.transform(prune({ keepLeaves: false }), dedup());
+    if (sharedTextures) {
+      externalizeTextures(doc, options.outDir, textureFiles);
+      await doc.transform(prune({ keepLeaves: false, keepAttributes: true }));
+    }
     if (compress) {
       await doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
     }
@@ -516,7 +728,7 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
       path,
       bounds,
       priority: entry.terrain ? 0 : 1,
-      ...(entry.terrain ? {} : { streamDistance: round(chunkSize * 2.5) }),
+      ...(entry.terrain ? {} : { streamDistance: round(streamDistance) }),
       byteLength: glb.byteLength,
     });
     chunkReports.push({ id, bytes: glb.byteLength, nodes: entry.indices.length, instancedGroups });
@@ -524,7 +736,12 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
   }
 
   // ---- manifest ----
-  const minY = Math.min(mapBounds.min[1], ...collision.colliders.flatMap((c) => (c.kind === 'box' ? [c.center[1] - c.halfExtents[1]] : [])));
+  const minY = Math.min(
+    mapBounds.min[1],
+    ...collision.colliders.flatMap((c) =>
+      c.kind === 'box' ? [c.center[1] - c.halfExtents[1]] : c.kind === 'heightfield' ? [c.heights.reduce((a, b) => Math.min(a, b), Infinity)] : [],
+    ),
+  );
   const manifest: MapManifest = parseMapManifest({
     schemaVersion: MAP_SCHEMA_VERSION,
     id: options.id,
@@ -537,6 +754,7 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     environment: environmentFrom(classified),
     chunks,
     collision: 'collision.json',
+    ...(library ? { library: { path: library.path, byteLength: library.bytes } } : {}),
     spawns,
     objectives,
     restrictedAreas,
@@ -561,10 +779,13 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
   return {
     manifestPath,
     chunks: chunkReports,
+    textures: [...textureFiles].map(([path, bytes]) => ({ path, bytes })),
+    library,
     colliders: {
       boxes,
       trimeshes: trimeshes.length,
       triangles: trimeshes.reduce((sum, c) => sum + (c.kind === 'trimesh' ? c.indices.length / 3 : 0), 0),
+      heightfields: collision.colliders.filter((c) => c.kind === 'heightfield').length,
     },
     spawns: spawns.length,
     objectives: objectives.length,

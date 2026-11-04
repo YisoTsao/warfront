@@ -3,7 +3,7 @@
 #   docker build -f apps/game-server/Dockerfile -t frontline-server .
 #   docker run -p 2567:2567 -e ALLOWED_ORIGINS=https://你的網站 frontline-server
 #
-# 建置時會產生範例地圖；正式地圖請先以 bun run maps:build 產生到 assets/maps/<id>/ 再建置映像。
+# 森林谷地（assets/maps/forest-valley）已提交在 repo；範例地圖在建置時產生。
 
 FROM oven/bun:1.4.4 AS build
 WORKDIR /app

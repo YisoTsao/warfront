@@ -116,6 +116,9 @@ export class Renderer {
     if (this.contextLost) {
       return;
     }
+    // 一個畫格有多個 render pass（場景、武器、後處理）；統計整個畫格而不是最後一個 pass
+    this.renderer.info.autoReset = false;
+    this.renderer.info.reset();
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
     if (this.overlayRoot.children.length > 0) {

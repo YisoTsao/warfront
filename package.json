@@ -17,6 +17,7 @@
     "e2e": "bun run maps:sample && bun run --cwd apps/web e2e",
     "check": "bun run typecheck && bun run lint && bun run test",
     "maps:build": "bun run --cwd tools/map-build build-map",
+    "maps:forest": "bun run --cwd tools/map-build forest",
     "maps:sample": "bun run --cwd tools/map-build sample && bun run --cwd tools/map-build build-map --input ../../assets/blender-source/exports/sample-valley.glb --id sample-valley --name 範例谷地",
     "dev:web": "bun run --cwd apps/web dev",
     "dev:server": "bun run --cwd apps/game-server dev",

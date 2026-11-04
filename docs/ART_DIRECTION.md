@@ -53,7 +53,7 @@
 | 第一人稱武器 | 依武器數值拼出的方塊與圓柱（`Viewmodel.ts`） | 武器資料預留 `presentation.modelPath`（glTF） |
 | 士兵 | 關節 + 方塊，隊伍色識別帶；程式建立的關鍵影格由 AnimationMixer 播放 | 改為載入骨架 glTF 與動畫片段，`SoldierModel` 對外介面不變 |
 | 音效 | WebAudio 合成（槍聲分層、遠處低通與音速延遲、腳步聲依材質） | 武器資料預留 `presentation.fireSound`、`reloadSound`（音檔） |
-| 地圖 | 範例谷地（頂點色地形、低多邊形樹木與建築） | Blackwood Valley 經 map-build 匯入 |
+| 地圖 | 森林谷地：Blender 程序化產生的地形、樹木、岩石、建築（材質由程序化顏色換成固定顏色；地形用 2048² 底色貼圖） | 美術在 Blender 調整後重新匯入；地形細節貼圖、草地系統 |
 
 ## 8. Phase 1 灰盒
 

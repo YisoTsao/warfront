@@ -9,7 +9,7 @@ export const config = {
   host: process.env.HOST ?? '0.0.0.0',
   /** 地圖資料目錄（map-build 的輸出） */
   mapsDir: process.env.MAPS_DIR ?? resolve(REPO_ROOT, 'assets/maps'),
-  defaultMap: process.env.DEFAULT_MAP ?? 'sample-valley',
+  defaultMap: process.env.DEFAULT_MAP ?? 'forest-valley',
   /** 每場預設以 bot 補到幾人（0 = 不放 bot）；客戶端可以在建立房間時要求 */
   defaultBotFill: Number(process.env.BOT_FILL ?? 8),
   resultsLog: process.env.RESULTS_LOG ?? resolve(REPO_ROOT, 'logs/match-results.jsonl'),

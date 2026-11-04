@@ -91,13 +91,16 @@ React 只在事件發生時更新：HUD 數值透過外部 store（`useSyncExter
 ## 5. 地圖資料流
 
 ```text
-Blender（.blend）
-  → 匯出 glTF（assets/blender-source/exports/<id>.glb）
+Blender（.blend）                 blender-mcp-asset-generator 的輸出
+  → 匯出 glTF                     → bun run maps:forest（組成同樣慣例的 GLB）
+    （assets/blender-source/exports/<id>.glb）
   → tools/map-build
   → assets/maps/<id>/
        map-manifest.json   出生點、據點、禁區、水域、環境光、分塊清單
-       collision.json      方塊與三角網格碰撞
+       collision.json      方塊、三角網格與高度場碰撞
        chunks/*.glb        視覺分塊（Meshopt、instancing、LOD）
+       library.glb         共用網格庫（分塊只放實例變換）
+       textures/*          共用貼圖
   → 瀏覽器：/maps/<id>/（Vite 開發伺服器直接讀取，建置時複製到 dist）
   → 伺服器：MAPS_DIR/<id>/（只讀 manifest 與 collision）
 ```

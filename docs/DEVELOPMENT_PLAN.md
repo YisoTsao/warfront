@@ -18,7 +18,7 @@
 |---|---|---|
 | Phase 0 | 環境與資產盤點 | ✅（Blackwood Valley 原始檔仍未提供） |
 | Phase 1 | 瀏覽器 FPS 基礎 | ✅ |
-| Phase 2 | Blender 資產流程與地圖整合 | ✅ 流程完成，以範例谷地驗證；**真正的 Blackwood Valley 尚未匯入**（缺原始檔） |
+| Phase 2 | Blender 資產流程與地圖整合 | ✅ 流程完成；**森林谷地**（blender-mcp-asset-generator 產生）已匯入為主要地圖。Blackwood Valley 的 Blender 原始檔仍未提供 |
 | Phase 3 | 武器與單機戰鬥原型 | ✅ |
 | Phase 4 | 權威多人基礎 | ✅ |
 | Phase 5 | 伺服器權威戰鬥 | ✅ |
@@ -33,7 +33,8 @@
 ### Phase 2 — Blender 資產流程
 
 - `packages/map-schema`：manifest、碰撞資料（zod 驗證）、Blender 命名慣例（`ENV_*`、`COLLISION_*`、`GAMEPLAY_*`、`LIGHTING_Reference`、`_LOD0/_LOD1`）。
-- `tools/map-build`：視覺依 64 m 分塊（地形分塊永遠載入、細節分塊依距離串流）、相同網格自動合併為 `EXT_mesh_gpu_instancing`、LOD 群組、Meshopt 壓縮；碰撞輸出為方塊或三角網格（可指定只擋移動或只擋子彈）；出生點、據點、禁區、水域、光照從 empty 與自訂屬性讀出。
+- `tools/map-build`：視覺依 64 m 分塊（地形分塊永遠載入、細節分塊依距離串流）、相同網格自動合併為 `EXT_mesh_gpu_instancing`、LOD 群組、Meshopt 壓縮；碰撞輸出為方塊、三角網格或高度場（可指定只擋移動或只擋子彈）；出生點、據點、禁區、水域、光照從 empty 與自訂屬性讀出；共用網格庫（`library.glb`）與共用貼圖（`textures/`）。
+- 森林谷地轉換器（`tools/map-build/src/forest`）：把 blender-mcp-asset-generator 的 phase1–5 輸出（高度圖、水體、植被與岩石實例清單、建築、配置）組成符合匯入慣例的 GLB，見 `ASSET_PIPELINE.md` §5。執行期資料：分塊 6.2 MB、網格庫 1.4 MB、貼圖 1.7 MB、碰撞 2.3 MB（JSON，主要是 513 × 513 高度場）。
 - 範例谷地產生器：依 Blender 匯出慣例產生測試 GLB（256 m 地形、河流、石橋、可進入的房屋、哨站、約 480 棵樹）。原始 2.2 MB → 執行期 0.55 MB（20 個分塊）+ 碰撞 0.79 MB（gzip 0.22 MB）。
 - 前端：GLTFLoader + MeshoptDecoder + KTX2Loader、依距離串流與卸載、LOD 切換、陰影跟隨玩家。
 - 驗證：map-build 單元測試 6 個；e2e 5 個（載入、instancing、房屋牆壁與門、只擋人的鐵絲網、分塊串流、地形行走）。
@@ -70,16 +71,17 @@
 | 項目 | 結果 |
 |---|---|
 | 型別檢查、lint | 通過 |
-| 單元測試 | 125 個通過 |
-| e2e（Playwright Chromium） | 37 個通過（Phase 1：18、Phase 2：5、Phase 3：7、多人：7） |
+| 單元測試 | 136 個通過（含高度場、共用網格庫與貼圖、森林谷地 16 bot 對戰） |
+| e2e（Playwright Chromium） | 41 個通過（Phase 1：18、Phase 2：5、Phase 3：7、多人：7、森林谷地：4） |
 | 16 人負載測試（16 個真實客戶端，60 秒） | 伺服器 tick 平均 1.37 ms、p95 2.48 ms、最大 7.55 ms（預算 33.3 ms）；每人 15 個快照／秒、約 18 KB/s |
 | 預測準確度 | 移動、衝刺、跳躍 15 秒內修正 0 次 |
+| 森林谷地征服（16 個 bot，90 秒模擬） | tick 平均 3.05 ms；15/16 個 bot 移動超過 15 m、佔領 3 個據點、沒有人掉出地形 |
 
 測試環境沒有 GPU（SwiftShader 軟體繪圖，約 4–13 FPS），所以 e2e 只驗證行為，移動判斷以模擬步驟為準。
 
 ## 5. 已知限制與尚未完成
 
-1. **Blackwood Valley 尚未匯入**：repo 與環境中都沒有原始檔。流程已用範例谷地驗證，收到 GLB 後執行 `bun run maps:build`。
+1. **森林谷地的草地與小物件尚未匯入**：草與花（約 22 萬個實例）需要 GPU 端的草地系統；樹樁與枝堆在 Blender 端沒有匯出網格。Blackwood Valley 的原始檔仍未提供。
 2. **參考 PC 效能尚未量測**：60 FPS 目標需要在指定的參考 PC 上量測（主規格 §3.3）。
 3. **Firefox 未測試**：測試環境只有 Chromium。
 4. **WebGPU 尚未評估**：維持 WebGL 2 基準路徑；渲染器與材質已模組化，之後可以評估。
@@ -91,7 +93,7 @@
 
 ## 6. 下一步建議
 
-1. 提供 Blackwood Valley 的 Blender 原始檔與版本 → 匯出、跑 map-build、調整碰撞與遊戲標記。
+1. 在參考 PC 上走一遍森林谷地 → 調整植被密度、LOD 距離、霧與光照；加入草地系統。
 2. 指定參考 PC → 量測畫格時間，調整畫質預設與預算。
 3. 決定部署平台 → 部署靜態網站與伺服器容器，設定 `ALLOWED_ORIGINS` 與 HTTPS / WSS。
 4. 美術資產（武器、角色、動畫、音效）取代暫代品。

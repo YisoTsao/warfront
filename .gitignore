@@ -25,3 +25,6 @@ Saved/
 # 範例地圖是由腳本產生的（bun run maps:sample），不進版控
 assets/blender-source/exports/sample-valley.glb
 assets/maps/sample-valley/
+
+# 森林谷地的匯入來源由 bun run maps:forest 產生（需要 blender-mcp-asset-generator 的輸出），只提交建置後的 assets/maps/forest-valley
+assets/blender-source/exports/forest-valley.glb

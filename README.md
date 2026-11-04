@@ -4,7 +4,7 @@
 
 - 規模：每場最多 16 人（8 對 8），人數不足時以 bot 補位
 - 模式：團隊死鬥、征服
-- 地圖：Blender 匯出的 GLB 經 `map-build` 轉換後載入（目前內建範例谷地與灰盒測試場；Blackwood Valley 原始檔到位後走同一條流程）
+- 地圖：Blender 產生的地圖經 `map-build` 轉換後載入。主要地圖是**森林谷地**（500 m × 500 m 河谷，由 [blender-mcp-asset-generator](https://github.com/YisoTsao/blender-mcp-asset-generator) 產生，`bun run maps:forest` 匯入）；另有灰盒測試場與範例谷地
 - 技術：TypeScript、Three.js（WebGL 2）、Rapier（WASM，前後端共用）、Vite + React；Colyseus 權威伺服器
 - 主規格：[`docs/FRONTLINE_WEB_PROJECT_SPEC.md`](docs/FRONTLINE_WEB_PROJECT_SPEC.md)；進度：[`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md)
 
@@ -63,6 +63,7 @@ bun run dev
 | `bun run build:server` | 把伺服器打包成單一 `apps/game-server/dist/index.js` |
 | `bun run server` | 以 Node 執行伺服器（不監看檔案） |
 | `bun run e2e` | 產生範例地圖、建置，並用 Playwright 在真實瀏覽器跑端到端測試（會自動啟動伺服器） |
+| `bun run maps:forest -- --source <blender-mcp-asset-generator/output>` | 匯入森林谷地（結果已提交在 `assets/maps/forest-valley`，只有 Blender 端重新產生時才需要） |
 | `bun run maps:sample` | 產生範例谷地 |
 | `bun run maps:build -- --input <glb> --id <地圖 id> --name <名稱>` | 轉換 Blender 匯出的地圖 |
 | `bun run load-test -- --clients 16 --seconds 60` | 對執行中的伺服器做 16 人負載測試 |

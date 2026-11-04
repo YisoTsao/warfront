@@ -1,4 +1,4 @@
-import type { MapCollision, MapManifest } from '@frontline/map-schema';
+import type { HeightfieldColliderData, MapCollision, MapManifest } from '@frontline/map-schema';
 import type { Vec3 } from '@frontline/shared';
 import { BULLET_QUERY_GROUPS, GROUP_CHARACTER, interactionGroups, layerMembership } from './groups';
 import { RAPIER } from './rapier';
@@ -34,6 +34,8 @@ export class SimWorld {
         desc = RAPIER.ColliderDesc.cuboid(hx, hy, hz)
           .setTranslation(...collider.center)
           .setRotation({ x, y, z, w });
+      } else if (collider.kind === 'heightfield') {
+        desc = heightfieldDesc(collider);
       } else {
         desc = RAPIER.ColliderDesc.trimesh(new Float32Array(collider.vertices), new Uint32Array(collider.indices));
       }
@@ -90,4 +92,23 @@ export class SimWorld {
   dispose(): void {
     this.world.free();
   }
+}
+
+/**
+ * Rapier 的高度場以碰撞體位置為中心，矩陣為欄優先（column-major），列沿 Z、欄沿 X，
+ * 參數是格數（樣本數 − 1）。地圖資料是列優先，這裡轉置。
+ */
+function heightfieldDesc(field: HeightfieldColliderData): RAPIER.ColliderDesc {
+  const { rows, cols } = field;
+  const heights = new Float32Array(rows * cols);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      heights[r + c * rows] = field.heights[r * cols + c]!;
+    }
+  }
+  return RAPIER.ColliderDesc.heightfield(rows - 1, cols - 1, heights, { x: field.size[0], y: 1, z: field.size[1] }).setTranslation(
+    field.origin[0] + field.size[0] / 2,
+    0,
+    field.origin[1] + field.size[1] / 2,
+  );
 }
