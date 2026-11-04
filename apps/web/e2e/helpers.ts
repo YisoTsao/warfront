@@ -76,10 +76,10 @@ export async function whileHolding(page: Page, keys: string[], until: () => Prom
 }
 
 /** 按住按鍵，直到經過 seconds 秒的模擬時間（不受渲染 FPS 影響）。 */
-export function holdForSimSeconds(page: Page, keys: string[], seconds: number): Promise<StepSample[]> {
+export function holdForSimSeconds(page: Page, keys: string[], seconds: number, timeout = 60_000): Promise<StepSample[]> {
   const steps = Math.round(seconds * STEPS_PER_SECOND);
   return whileHolding(page, keys, () =>
-    page.waitForFunction((target) => window.__frontline!.recordedStepCount() >= target, steps, { timeout: 60_000 }),
+    page.waitForFunction((target) => window.__frontline!.recordedStepCount() >= target, steps, { timeout }),
   );
 }
 

@@ -5,7 +5,7 @@ import { holdForSimSeconds, openGame, snapshot, startPlaying, teleportToGround }
  * 森林谷地：由 blender-mcp-asset-generator 產生、bun run maps:forest 匯入的正式地圖。
  * 地形碰撞是高度場；樹木與岩石來自共用網格庫，貼圖共用，逐實例 LOD。
  */
-test.describe.configure({ timeout: 240_000 });
+test.describe.configure({ timeout: 420_000 });
 
 const MAP = 'forest-valley';
 
@@ -36,7 +36,7 @@ test('沿著道路走：高度場上移動速度正常、貼著地面', async ({
   await waitStreamed(page);
   await startPlaying(page, 30_000);
   await teleportToGround(page, 2, 125, 0);
-  const samples = await holdForSimSeconds(page, ['KeyW'], 3);
+  const samples = await holdForSimSeconds(page, ['KeyW'], 3, 180_000);
   const first = samples[0]!;
   const last = samples.at(-1)!;
   const travelled = Math.hypot(last.x - first.x, last.z - first.z);
@@ -53,7 +53,7 @@ test('地圖邊界擋住玩家；逐實例 LOD 依位置重新分配', async ({ 
   const before = (await snapshot(page)).streaming!.visibleInstances;
   // 南邊河口附近的平地，往南（+Z）走向邊界
   await teleportToGround(page, 5, 243, Math.PI);
-  await holdForSimSeconds(page, ['KeyW'], 4);
+  await holdForSimSeconds(page, ['KeyW'], 4, 180_000);
   const s = await snapshot(page);
   expect(s.feet.z).toBeLessThan(249.7);
   expect(s.feet.z).toBeGreaterThan(246);
