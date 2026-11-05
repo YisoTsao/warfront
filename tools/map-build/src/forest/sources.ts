@@ -137,7 +137,7 @@ export interface ForestSources {
   waterMask: Grid;
   /** 水深（公尺） */
   waterDepth: Grid;
-  density: Record<'grass' | 'moss' | 'needle' | 'leaf' | 'canopy' | 'scree', Grid>;
+  density: Record<'grass' | 'flowers' | 'moss' | 'needle' | 'leaf' | 'canopy' | 'scree', Grid>;
   vegetation: Record<string, InstanceSet>;
   rocks: Record<string, InstanceSet>;
   layout: Layout;
@@ -163,10 +163,11 @@ export async function readForestSources(dir: string): Promise<ForestSources> {
   const carved = readR16(p('phase2_water', 'heightmap_carved_1025.r16'), water.heightmap_carved.value_0_m, water.heightmap_carved.value_65535_m, size);
   const graded = readR16(p('phase5_environment', 'heightmap_graded_1025.r16'), env.heightmap_graded.value_0_m, env.heightmap_graded.value_65535_m, size);
   const veg = (name: string) => readMask(p('phase3_vegetation', `density_${name}_513.png`), size);
-  const [waterMask, waterDepth, grass, moss, needle, leaf, canopy, scree] = await Promise.all([
+  const [waterMask, waterDepth, grass, flowers, moss, needle, leaf, canopy, scree] = await Promise.all([
     readMask(p('phase2_water', 'water_mask_1025.png'), size),
     readMask(p('phase2_water', 'water_depth_1025_16bit.png'), size, water.water_depth_map.value_65535_m),
     veg('grass'),
+    veg('flowers'),
     veg('moss'),
     veg('litter_needle'),
     veg('litter_leaf'),
@@ -180,7 +181,7 @@ export async function readForestSources(dir: string): Promise<ForestSources> {
     graded,
     waterMask,
     waterDepth,
-    density: { grass, moss, needle, leaf, canopy, scree },
+    density: { grass, flowers, moss, needle, leaf, canopy, scree },
     vegetation: readJson(p('phase3_vegetation', 'vegetation_instances.json')),
     rocks: readJson(p('phase4_rocks', 'rock_instances.json')),
     layout: readJson(p('phase5_environment', 'environment_layout.json')),

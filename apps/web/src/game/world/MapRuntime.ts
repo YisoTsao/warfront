@@ -2,7 +2,9 @@ import { GRAYBOX_LAYOUT, GRAYBOX_MAP_ID, type MapManifest, type SpawnPoint } fro
 import { SimWorld, loadMapData } from '@frontline/simulation';
 import * as THREE from 'three';
 import { ChunkStreamer, type StreamingStats } from './ChunkStreamer';
+import { CloudLayer } from './CloudLayer';
 import { applyEnvironment, followShadow, type EnvironmentHandles } from './Environment';
+import { GRASS_QUALITY, GrassField, type GrassQuality } from './GrassField';
 import { buildGrayboxVisuals } from './GrayboxMap';
 import { WaterMaterials } from './WaterMaterial';
 
@@ -30,6 +32,8 @@ export class MapRuntime {
     private readonly streamer: ChunkStreamer | null,
     private readonly graybox: THREE.Group | null,
     private readonly water: WaterMaterials,
+    private readonly clouds: CloudLayer | null,
+    private readonly grass: GrassField | null,
   ) {}
   private time = 0;
 
@@ -42,6 +46,8 @@ export class MapRuntime {
     focus: THREE.Vector3 | null,
     onProgress?: (p: MapLoadProgress) => void,
     streamScale = 1,
+    grassQuality: GrassQuality = GRASS_QUALITY.high,
+    reflectionScale = 0.5,
   ): Promise<MapRuntime> {
     onProgress?.({ stage: 'manifest', done: 0, total: 1 });
     const data = await loadMapData(mapId, '/maps', async (url) => {
@@ -63,8 +69,24 @@ export class MapRuntime {
       },
       data.manifest.water,
       data.baseUrl,
+      scene,
     );
     environment.sun.castShadow = shadows.cast;
+    const lighting = {
+      sunDirection: new THREE.Vector3(-sx, -sy, -sz),
+      sunColor: new THREE.Color(data.manifest.environment.sunColor),
+      horizon: environment.horizonColor,
+      zenith: environment.zenithColor,
+    };
+    // 灰盒是測試用的素色場景，不加雲與草
+    const clouds = mapId === GRAYBOX_MAP_ID ? null : new CloudLayer(scene, lighting);
+    const heightfield = data.collision.colliders.find((c) => c.kind === 'heightfield');
+    const grass = data.manifest.grass && heightfield ? new GrassField(data.manifest.grass, heightfield, data.baseUrl, scene) : null;
+    grass?.setQuality(grassQuality);
+    if (grass) {
+      water.excludeFromReflection(grass.group);
+    }
+    water.setReflectionScale(reflectionScale);
     let streamer: ChunkStreamer | null = null;
     let graybox: THREE.Group | null = null;
     if (mapId === GRAYBOX_MAP_ID) {
@@ -77,7 +99,7 @@ export class MapRuntime {
       await streamer.preload(start, (done, total) => onProgress?.({ stage: 'chunks', done, total }));
     }
     onProgress?.({ stage: 'ready', done: 1, total: 1 });
-    return new MapRuntime(data.manifest, sim, scene, environment, streamer, graybox, water);
+    return new MapRuntime(data.manifest, sim, scene, environment, streamer, graybox, water, clouds, grass);
   }
 
   get id(): string {
@@ -94,6 +116,8 @@ export class MapRuntime {
     this.shadowFocus.copy(focus);
     this.time += frameSeconds;
     this.water.update(this.time);
+    this.clouds?.update(this.time);
+    this.grass?.update(focus, this.time);
     followShadow(this.environment.sun, this.shadowFocus, this.manifest.environment.sunDirection);
     this.streamTimer -= frameSeconds;
     if (this.streamTimer <= 0) {
@@ -102,7 +126,9 @@ export class MapRuntime {
     }
   }
 
-  setQuality(options: { shadows: boolean; shadowMapSize: number; streamScale: number }): void {
+  setQuality(options: { shadows: boolean; shadowMapSize: number; streamScale: number; grass: GrassQuality; reflectionScale: number }): void {
+    this.grass?.setQuality(options.grass);
+    this.water.setReflectionScale(options.reflectionScale);
     this.environment.sun.castShadow = options.shadows;
     if (this.environment.sun.shadow.mapSize.x !== options.shadowMapSize) {
       this.environment.sun.shadow.mapSize.set(options.shadowMapSize, options.shadowMapSize);
@@ -113,6 +139,11 @@ export class MapRuntime {
       this.streamer.distanceScale = options.streamScale;
       this.streamer.setShadows(options.shadows);
     }
+  }
+
+  /** 草叢實例數（除錯與測試用；沒有草地時為 0） */
+  grassInstances(): number {
+    return this.grass?.instanceCount() ?? 0;
   }
 
   streamingStats(): StreamingStats | null {
@@ -126,6 +157,8 @@ export class MapRuntime {
     }
     this.environment.dispose();
     this.water.dispose();
+    this.clouds?.dispose();
+    this.grass?.dispose();
     this.sim.dispose();
   }
 }

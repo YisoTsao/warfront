@@ -5,6 +5,7 @@ import { defineConfig, type Plugin } from 'vite';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 const MAPS_DIR = resolve(REPO_ROOT, 'assets/maps');
+const CHARACTERS_DIR = resolve(REPO_ROOT, 'assets/characters');
 const BASIS_DIR = resolve(import.meta.dirname, 'node_modules/three/examples/jsm/libs/basis');
 
 const MIME: Record<string, string> = {
@@ -20,11 +21,12 @@ const MIME: Record<string, string> = {
 };
 
 /**
- * 把 repo 的 assets/maps 以 /maps/ 提供（開發時直接讀檔，建置時複製到 dist），
+ * 把 repo 的 assets/maps 以 /maps/、assets/characters 以 /characters/ 提供（開發時直接讀檔，建置時複製到 dist），
  * 並提供 KTX2 轉碼器（/basis/）。地圖資料不放進 public，避免與原始資產重複一份。
  */
 function frontlineAssets(): Plugin {
   const mounts: Array<{ prefix: string; dir: string }> = [
+    { prefix: '/characters/', dir: CHARACTERS_DIR },
     { prefix: '/maps/', dir: MAPS_DIR },
     { prefix: '/basis/', dir: BASIS_DIR },
   ];

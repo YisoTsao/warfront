@@ -3,6 +3,7 @@ import { TICK_RATE } from '@frontline/shared';
 import { initPhysics } from '@frontline/simulation';
 import * as THREE from 'three';
 import { AudioSystem } from '../audio/AudioSystem';
+import { preloadSoldierAsset } from '../animation/RiggedSoldier';
 import { DebugStats } from '../debug/DebugStats';
 import { debugHookEnabled, type FrontlineDebugHook, type StepSample } from '../debug/debugHook';
 import { HudStore } from '../hud/HudStore';
@@ -19,7 +20,7 @@ import { Viewmodel } from '../weapons/Viewmodel';
 import { WeaponController, type PelletResolver } from '../weapons/WeaponController';
 import { MapRuntime, type MapLoadProgress } from '../world/MapRuntime';
 import { FixedStepLoop } from './FixedStepLoop';
-import { QualityController, streamScaleFor } from './QualityController';
+import { QualityController, grassQualityFor, reflectionScaleFor, streamScaleFor } from './QualityController';
 import type { GameSettings } from './settings';
 
 /** 模擬頻率與伺服器 tick 相同（30 Hz），渲染以內插維持平順。 */
@@ -61,11 +62,12 @@ export interface GameParts {
 
 /** 建立單機與連線共用的部件（渲染、地圖、玩家、武器、特效、音效、HUD）。 */
 export async function createGameParts(container: HTMLElement, options: GameBaseOptions, resolverFactory: (parts: Omit<GameParts, 'weapons'>) => PelletResolver): Promise<GameParts> {
-  await initPhysics();
+  // 士兵模型與物理引擎一起下載；失敗時士兵改用暫代模型
+  await Promise.all([initPhysics(), preloadSoldierAsset()]);
   const renderer = new Renderer(container, options.callbacks.onContextLostChange);
   let map: MapRuntime;
   try {
-    map = await MapRuntime.load(options.mapId, renderer.scene, renderer.renderer, 1 / CLIENT_SIMULATION_HZ, { cast: true }, null, options.callbacks.onLoadProgress, streamScaleFor(options.settings));
+    map = await MapRuntime.load(options.mapId, renderer.scene, renderer.renderer, 1 / CLIENT_SIMULATION_HZ, { cast: true }, null, options.callbacks.onLoadProgress, streamScaleFor(options.settings), grassQualityFor(options.settings), reflectionScaleFor(options.settings));
   } catch (error) {
     renderer.dispose();
     throw error;
@@ -144,9 +146,12 @@ export abstract class GameBase {
     };
   }
 
+  private debugHook: FrontlineDebugHook | null = null;
+
   start(): void {
     if (debugHookEnabled()) {
-      window.__frontline = this.createDebugHook();
+      this.debugHook = this.createDebugHook();
+      window.__frontline = this.debugHook;
     }
     this.renderer.renderer.setAnimationLoop(this.frame);
   }
@@ -192,7 +197,8 @@ export abstract class GameBase {
     }
     this.disposed = true;
     this.renderer.renderer.setAnimationLoop(null);
-    if (window.__frontline) {
+    // 只移除自己掛上的：React StrictMode 會建立兩個實例，先被丟掉的那個可能比較晚載入完、比較晚 dispose
+    if (this.debugHook && window.__frontline === this.debugHook) {
       delete window.__frontline;
     }
     this.disposeExtras();

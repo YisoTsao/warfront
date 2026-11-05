@@ -6,7 +6,8 @@
   "scripts": {
     "build-map": "tsx src/cli.ts",
     "sample": "tsx src/sample/generateSampleValley.ts",
-    "forest": "tsx src/forest/cli.ts"
+    "forest": "tsx src/forest/cli.ts",
+    "characters": "tsx src/characters/prepare.ts"
   },
   "dependencies": {
     "@frontline/map-schema": "workspace:*",

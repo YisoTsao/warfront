@@ -202,19 +202,40 @@ function strokeCoverage(px: number, size: number, lines: Array<{ points: V2[]; h
   return out;
 }
 
-/** 依植被密度、坡度、水域、道路與營地畫出整張地圖的底色（sRGB JPEG）。 */
-export async function terrainAlbedo(src: ForestSources, layout: Layout, px = 2048): Promise<Buffer> {
-  const size = src.size;
+/** 道路、步道、壕溝與營地整地範圍的覆蓋率（0–1），底色貼圖與草地密度共用。 */
+interface GroundCovers {
+  road: Float32Array;
+  trail: Float32Array;
+  trench: Float32Array;
+  pad(x: number, y: number): number;
+}
+
+function groundCovers(src: ForestSources, layout: Layout, px: number): GroundCovers {
   const roads = Object.values(layout.roads).map((road) => ({
     points: road.polyline_xyz_m.map(([x, y]) => [x, y] as V2),
     halfWidth: road.half_width_m,
     feather: road.kind === 'road' ? 1.2 : 0.8,
     kind: road.kind,
   }));
-  const roadCover = strokeCoverage(px, size, roads.filter((r) => r.kind === 'road'));
-  const trailCover = strokeCoverage(px, size, roads.filter((r) => r.kind !== 'road'));
-  const trenchCover = strokeCoverage(px, size, [{ points: layout.trench.polyline_xy_m, halfWidth: 1.1, feather: 0.6 }]);
   const pads = Object.values(layout.sites).filter((s) => /^(HQ_|Lumber|Farmhouse|Bunker)/.test(s.name));
+  return {
+    road: strokeCoverage(px, src.size, roads.filter((r) => r.kind === 'road')),
+    trail: strokeCoverage(px, src.size, roads.filter((r) => r.kind !== 'road')),
+    trench: strokeCoverage(px, src.size, [{ points: layout.trench.polyline_xy_m, halfWidth: 1.1, feather: 0.6 }]),
+    pad: (x, y) => {
+      let cover = 0;
+      for (const pad of pads) {
+        cover = Math.max(cover, 1 - smoothstep(pad.radius * 0.55, pad.radius * 0.95, Math.hypot(x - pad.x, y - pad.y)));
+      }
+      return cover;
+    },
+  };
+}
+
+/** 依植被密度、坡度、水域、道路與營地畫出整張地圖的底色（sRGB JPEG）。 */
+export async function terrainAlbedo(src: ForestSources, layout: Layout, px = 2048): Promise<Buffer> {
+  const size = src.size;
+  const covers = groundCovers(src, layout, px);
   const rgb = Buffer.alloc(px * px * 3);
   const cell = size / (px - 1);
   for (let r = 0; r < px; r++) {
@@ -241,14 +262,11 @@ export async function terrainAlbedo(src: ForestSources, layout: Layout, px = 204
       const slope = src.graded.slopeDegrees(x, y);
       color = mix(color, PALETTE.rock, smoothstep(36, 52, slope) * 0.9);
       color = mix(color, PALETTE.scree, Math.min(1, d.scree.sample(x, y) * 1.4));
-      for (const pad of pads) {
-        const dist = Math.hypot(x - pad.x, y - pad.y);
-        color = mix(color, PALETTE.pad, (1 - smoothstep(pad.radius * 0.55, pad.radius * 0.95, dist)) * 0.8);
-      }
+      color = mix(color, PALETTE.pad, covers.pad(x, y) * 0.8);
       const i = r * px + c;
-      color = mix(color, PALETTE.trail, trailCover[i]!);
-      color = mix(color, PALETTE.road, roadCover[i]!);
-      color = mix(color, PALETTE.trench, trenchCover[i]!);
+      color = mix(color, PALETTE.trail, covers.trail[i]!);
+      color = mix(color, PALETTE.road, covers.road[i]!);
+      color = mix(color, PALETTE.trench, covers.trench[i]!);
       color = mix(color, PALETTE.riverbed, Math.min(1, src.waterMask.sample(x, y) * 1.5));
       // 兩種尺度的雜訊讓大片顏色不會太平均
       const n = 0.82 + 0.22 * valueNoise(x / 9, y / 9) + 0.14 * valueNoise(x / 2.2, y / 2.2);
@@ -258,4 +276,35 @@ export async function terrainAlbedo(src: ForestSources, layout: Layout, px = 204
     }
   }
   return sharp(rgb, { raw: { width: px, height: px, channels: 3 } }).jpeg({ quality: 86, mozjpeg: true }).toBuffer();
+}
+
+/**
+ * 草地密度圖（前端 GPU 草地系統使用，PNG RGB）：R = 草、G = 花。
+ * 以 Blender 的草與花密度為基礎，扣掉道路、步道、壕溝、營地、水域與陡坡
+ * （Blender 的草實例是在第 5 階段整地前擺放的，這裡補上同樣的清理）。
+ * 列 0 在北邊（−Z），欄 0 在西邊（−X）。
+ */
+export async function grassDensityMap(src: ForestSources, layout: Layout, px = 512): Promise<Buffer> {
+  const size = src.size;
+  const covers = groundCovers(src, layout, px);
+  const rgb = Buffer.alloc(px * px * 3);
+  const cell = size / (px - 1);
+  for (let r = 0; r < px; r++) {
+    const y = size / 2 - r * cell;
+    for (let c = 0; c < px; c++) {
+      const x = -size / 2 + c * cell;
+      const i = r * px + c;
+      const keep =
+        (1 - covers.road[i]!) *
+        (1 - covers.trail[i]! * 0.85) *
+        (1 - covers.trench[i]!) *
+        (1 - covers.pad(x, y) * 0.9) *
+        (1 - Math.min(1, src.waterMask.sample(x, y) * 2.5)) *
+        (1 - smoothstep(30, 42, src.graded.slopeDegrees(x, y))) *
+        (1 - Math.min(1, src.density.scree.sample(x, y) * 1.5));
+      rgb[i * 3] = Math.round(Math.min(1, src.density.grass.sample(x, y)) * keep * 255);
+      rgb[i * 3 + 1] = Math.round(Math.min(1, src.density.flowers.sample(x, y)) * keep * 255);
+    }
+  }
+  return sharp(rgb, { raw: { width: px, height: px, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer();
 }
