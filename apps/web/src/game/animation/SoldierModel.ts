@@ -1,5 +1,6 @@
 import type { Locomotion, Stance } from '@frontline/shared';
 import * as THREE from 'three';
+import { RiggedSoldier, soldierAssetReady } from './RiggedSoldier';
 
 export type SoldierAnimation = 'idle' | 'walk' | 'run' | 'crouchIdle' | 'crouchWalk' | 'prone' | 'crawl' | 'airborne' | 'downed' | 'death';
 
@@ -9,7 +10,18 @@ const TEAM_COLORS = {
   neutral: { uniform: 0x5a5a5a, accent: 0xc0c0c0 },
 } as const;
 
-type Team = keyof typeof TEAM_COLORS;
+export type SoldierTeam = keyof typeof TEAM_COLORS;
+
+/** 士兵外觀的共同介面：骨架模型（RiggedSoldier）與程序產生的暫代模型都實作它。 */
+export interface SoldierView {
+  readonly root: THREE.Group;
+  readonly muzzle: THREE.Object3D;
+  readonly animation: SoldierAnimation | null;
+  play(animation: SoldierAnimation, fade?: number): void;
+  setSpotted(spotted: boolean): void;
+  update(frameSeconds: number, pitch: number): void;
+  dispose(): void;
+}
 
 const q = (x: number, y = 0, z = 0) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ')).toArray();
 
@@ -125,10 +137,52 @@ export function animationFor(stance: Stance, locomotion: Locomotion, life: 'aliv
 }
 
 /**
- * 程序產生的士兵模型（關節 + 方塊），以 THREE.AnimationMixer 播放動畫並交叉淡入淡出。
- * 有美術資產後，改為載入 glTF 骨架模型與動畫片段即可，介面不變。
+ * 士兵模型：士兵 glTF 已載入（preloadSoldierAsset）時用骨架模型，否則用程序產生的暫代模型。
+ * 兩者介面相同，呼叫端不需要知道是哪一種。
  */
-export class SoldierModel {
+export class SoldierModel implements SoldierView {
+  private readonly view: SoldierView;
+
+  constructor(team: SoldierTeam | null, name = 'soldier') {
+    this.view = soldierAssetReady() ? new RiggedSoldier(team ?? 'neutral', name) : new ProceduralSoldier(team, name);
+  }
+
+  /** 是否使用骨架模型（除錯與測試用） */
+  get rigged(): boolean {
+    return this.view instanceof RiggedSoldier;
+  }
+
+  get root(): THREE.Group {
+    return this.view.root;
+  }
+
+  get muzzle(): THREE.Object3D {
+    return this.view.muzzle;
+  }
+
+  get animation(): SoldierAnimation | null {
+    return this.view.animation;
+  }
+
+  play(animation: SoldierAnimation, fade = 0.2): void {
+    this.view.play(animation, fade);
+  }
+
+  setSpotted(spotted: boolean): void {
+    this.view.setSpotted(spotted);
+  }
+
+  update(frameSeconds: number, pitch: number): void {
+    this.view.update(frameSeconds, pitch);
+  }
+
+  dispose(): void {
+    this.view.dispose();
+  }
+}
+
+/** 程序產生的暫代士兵（關節 + 方塊），以 THREE.AnimationMixer 播放程式建立的關鍵影格並交叉淡入淡出。 */
+class ProceduralSoldier implements SoldierView {
   readonly root = new THREE.Group();
   private readonly mixer: THREE.AnimationMixer;
   private readonly actions = new Map<SoldierAnimation, THREE.AnimationAction>();
@@ -140,7 +194,7 @@ export class SoldierModel {
   readonly muzzle = new THREE.Object3D();
   private readonly marker: THREE.Mesh;
 
-  constructor(team: Team | null, name = 'soldier') {
+  constructor(team: SoldierTeam | null, name: string) {
     this.root.name = name;
     const colors = TEAM_COLORS[team ?? 'neutral'];
     const uniform = this.material(colors.uniform, 0.9);

@@ -11,7 +11,7 @@
  *   LIGHTING_Reference 太陽（Blender 燈光預設 noon）
  *
  * Blender 端的程序化材質無法匯出（GLB 裡都是白色），這裡依原始材質腳本的顏色重新指定。
- * 草與花（約 22 萬個實例）目前不匯入，見 docs/ASSET_PIPELINE.md。
+ * 草與花（約 22 萬個實例）不匯入成網格，改輸出密度圖（scene extras.frontline_grass），由前端的 GPU 草地系統產生。
  */
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -21,7 +21,7 @@ import { copyToDocument, unpartition } from '@gltf-transform/functions';
 import sharp from 'sharp';
 import { buildLods, triangleCount, type LodPlan } from './lod';
 import { readForestSources, toWorld, type ForestSources, type InstanceSet, type Layout, type V2, type V3 } from './sources';
-import { addHeightfieldNode, addTerrainTiles, terrainAlbedo, terrainHeightAt, terrainSamples, type TerrainSamples } from './terrain';
+import { addHeightfieldNode, addTerrainTiles, grassDensityMap, terrainAlbedo, terrainHeightAt, terrainSamples, type TerrainSamples } from './terrain';
 
 type Quat = [number, number, number, number];
 
@@ -451,7 +451,7 @@ export async function importForestValley(options: ForestImportOptions): Promise<
       }
     }
   }
-  // 草與花不匯入：刪掉沒有用到的網格
+  // 草與花不匯入成網格（前端依密度圖產生）：刪掉沒有用到的網格
   for (const [name, mesh] of vegMeshes) {
     if (!lod0.has(name)) mesh.dispose();
   }
@@ -744,6 +744,19 @@ export async function importForestValley(options: ForestImportOptions): Promise<
       size: src.size,
       max_depth: round(src.waterScale.maxDepth, 3),
       max_speed: round(src.waterScale.maxSpeed, 3),
+    },
+  });
+
+  // ---- 草地密度（前端 GPU 草地系統使用；顏色取地形底色貼圖）----
+  log('產生草地密度圖');
+  doc.createTexture('T_Grass_Density').setImage(await grassDensityMap(src, layout)).setMimeType('image/png');
+  scene.setExtras({
+    ...scene.getExtras(),
+    frontline_grass: {
+      density_texture: 'T_Grass_Density',
+      color_texture: 'T_Terrain_Albedo',
+      origin: [-src.size / 2, -src.size / 2],
+      size: src.size,
     },
   });
 

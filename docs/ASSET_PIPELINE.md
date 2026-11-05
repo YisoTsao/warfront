@@ -61,7 +61,7 @@ assets/
 | 網格（mesh） | `cull_distance` | 超過這個距離（公尺）不畫，用於蕨類、小石頭等小物件 |
 | 場景（scene） | `frontline_build` | 建置參數：`chunk_size`、`terrain_chunk_size`、`stream_distance`、`lod_distances`、`shared_library`；命令列參數優先 |
 | 場景（scene） | `frontline_water` | 水面資料：`flow_texture`、`depth_texture`（GLB 內的貼圖名稱）、`origin`、`size`、`max_depth`、`max_speed` → `manifest.water` |
-| 材質 | `frontline_shader = "water"` / `"waterfall"` | 前端換成水面 shader（流動、深淺、天空反射、泡沫） |
+| 材質 | `frontline_shader = "water"` / `"waterfall"` | 前端換成水面 shader（流動、深淺、平面反射倒影、泡沫） |
 | 材質 | `frontline_foliage = true` | 葉片：前端把法線改成從樹冠往外、不依正反面翻轉，並加一點透光 |
 
 ### 3.3 LOD
@@ -114,9 +114,10 @@ bun run maps:forest -- --source ../blender-mcp-asset-generator/output
    - 遊戲標記：兩隊出生點用 phase5 的 HQ 出生建議點（南方 HQ = alpha、北方 HQ = bravo）；征服據點 A 橋梁、B 農舍、C 教堂遺跡、D 伐木場；敵方基地禁區；地圖四周只擋人的邊界牆。
    - 材質：Blender 的程序化材質匯出後是白色，依原始材質腳本的顏色重新指定；葉片改成 alpha 測試並提高亮度（Blender 靠半透明散射提亮），標記 `frontline_foliage`。
    - 太陽：Blender 燈光預設 `noon`（仰角 58°、方位 165°）。
+   - 草與花：不匯入約 22 萬個實例，改輸出 512² 密度圖（R = 草、G = 花，已扣掉道路、步道、壕溝、營地、水域、陡坡與碎石），經場景的 `frontline_grass` 設定寫進 `manifest.grass`，前端 GPU 草地系統依此產生；草的顏色取地形底色貼圖。
 2. **map-build**：產生 `assets/maps/forest-valley/`（提交到 repo；執行期資料約 11 MB，不走 LFS，見 `.gitattributes`）。
 
-目前沒有匯入的內容：草與花（約 22 萬個實例，需要 GPU 端的草地系統）、樹樁與枝堆（phase5 沒有匯出網格）、phase6–7 的遊戲標記與燈光腳本（尚未在 Blender 執行）。
+目前沒有匯入的內容：樹樁與枝堆（phase5 沒有匯出網格）、phase6–7 的遊戲標記與燈光腳本（尚未在 Blender 執行）。
 
 ## 6. 執行期
 
@@ -124,7 +125,10 @@ bun run maps:forest -- --source ../blender-mcp-asset-generator/output
 - 植被品質會改變串流距離（低 60%、中 85%、高 100%）。
 - 伺服器只讀 `map-manifest.json` 與 `collision.json`，不載入視覺分塊。
 - 天空：物理天空（Rayleigh／Mie 散射）畫進立方體貼圖，當作背景與 PMREM 環境貼圖；亮度以地圖霧色為目標自動校正，霧色取天空地平線的顏色。
-- 水面 shader（`WaterMaterial.ts`）：兩相位 flowmap 沿流向推動波紋、依水深吸收顏色並在岸邊淡出、Fresnel 反射天空與太陽、急流與岸邊的條紋泡沫；遠處波紋減弱避免閃爍。瀑布沿 UV 往下流。
+- 雲層（`CloudLayer.ts`）：跟著鏡頭的半球疊在天空背景上，FBM 雲平面隨風飄移，地平線淡出到霧色。
+- 草地（`GrassField.ts`）：依 `manifest.grass` 的密度圖在玩家周圍產生草叢（兩次 draw call），高度取碰撞高度場；範圍依植被品質。
+- 角色：`assets/characters/` 以 `/characters/` 提供（與地圖相同，開發時直接讀檔、建置時複製）。士兵與步槍都是 Quaternius 的 CC0 模型，來源見 `assets/characters/SOURCE.md`，由 `bun run --cwd tools/map-build characters` 產生。
+- 水面 shader（`WaterMaterial.ts`）：平面反射倒影（場景沿鏡頭附近的水面高度鏡射，以畫面 35–50% 的解析度另畫一次，不含水面與草地、不重算陰影；水面高度與鏡射平面相差超過約 1.5 m 時改用天空顏色）；兩相位 flowmap 沿流向推動多層雜訊法線與風吹漣漪；Schlick Fresnel 混合水體與倒影；陽光用 GGX 鏡面反射；依水深吸收顏色並在岸邊淡出；急流與岸邊的條紋泡沫；遠處法線與泡沫減弱避免閃爍。倒影解析度依植被品質（低：關閉、中 35%、高 50%）。瀑布沿 UV 往下流。
 - 有共用網格庫時，玩家出生前先載入 `library.glb`；分塊載入後把佔位網格換成網格庫的幾何與材質。共用的幾何、材質與貼圖在卸載分塊時不釋放。
 
 ## 7. 尚未實作

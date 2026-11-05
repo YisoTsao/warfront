@@ -106,6 +106,20 @@ export const WaterSurfaceSchema = z.object({
 });
 export type WaterSurface = z.infer<typeof WaterSurfaceSchema>;
 
+/**
+ * 草地（前端 GPU 草地系統）：密度圖決定草與花的分布，顏色貼圖讓草的底色與地形一致。
+ * 兩張貼圖都以整張地圖為範圍，第 0 列在 origin 的 Z（北邊）、第 0 欄在 origin 的 X（西邊）。
+ */
+export const GrassFieldSchema = z.object({
+  /** RGB：R = 草的密度、G = 花的密度（0–1） */
+  densityMap: z.string(),
+  /** 地形底色貼圖（sRGB），草葉底部的顏色 */
+  colorMap: z.string().optional(),
+  origin: z.tuple([z.number(), z.number()]),
+  size: z.number().positive(),
+});
+export type GrassField = z.infer<typeof GrassFieldSchema>;
+
 export const MapManifestSchema = z.object({
   schemaVersion: z.literal(MAP_SCHEMA_VERSION),
   id: z.string().regex(/^[a-z0-9-]+$/),
@@ -121,6 +135,8 @@ export const MapManifestSchema = z.object({
   library: z.object({ path: z.string(), byteLength: z.number().int().nonnegative().optional() }).optional(),
   /** 水面流向與深度（可選；沒有時水面用固定顏色） */
   water: WaterSurfaceSchema.optional(),
+  /** 草地密度（可選；沒有時不畫草） */
+  grass: GrassFieldSchema.optional(),
   spawns: z.array(SpawnPointSchema).min(1),
   objectives: z.array(ObjectiveSchema).default([]),
   restrictedAreas: z.array(RestrictedAreaSchema).default([]),

@@ -526,6 +526,38 @@ function waterSurfaceFrom(source: Document, settings: Record<string, unknown> | 
 }
 
 /**
+ * 來源場景的 extras.frontline_grass 指定草地密度圖與顏色貼圖（以貼圖名稱指向 GLB 內的圖），
+ * 寫到 textures/ 並轉成 manifest.grass。顏色貼圖通常就是地形底色，依內容雜湊命名所以不會多寫一份。
+ */
+function grassFieldFrom(source: Document, settings: Record<string, unknown> | undefined, outDir: string, written: Map<string, number>, warnings: string[]): MapManifest['grass'] {
+  if (!settings) {
+    return undefined;
+  }
+  const textures = source.getRoot().listTextures();
+  const image = (name: unknown) => {
+    const texture = textures.find((t) => t.getName() === name);
+    return texture?.getImage() ? { image: texture.getImage()!, mime: texture.getMimeType() || 'image/png', name: texture.getName() } : null;
+  };
+  const density = image(settings.density_texture);
+  const color = settings.color_texture === undefined ? null : image(settings.color_texture);
+  const origin = settings.origin;
+  const size = num(settings.size);
+  if (!density || !Array.isArray(origin) || origin.length !== 2 || !size) {
+    warnings.push('frontline_grass 設定不完整（需要 density_texture、origin、size），已略過草地資料');
+    return undefined;
+  }
+  if (settings.color_texture !== undefined && !color) {
+    warnings.push(`frontline_grass 的 color_texture「${String(settings.color_texture)}」不存在，草地改用固定顏色`);
+  }
+  return {
+    densityMap: writeTextureFile(outDir, density.name, density.image, density.mime, written),
+    ...(color ? { colorMap: writeTextureFile(outDir, color.name, color.image, color.mime, written) } : {}),
+    origin: [Number(origin[0]), Number(origin[1])],
+    size,
+  };
+}
+
+/**
  * 把材質用到的貼圖寫到 textures/（依內容雜湊命名，同一張只寫一次），
  * 材質改成在 extras.frontline_textures 記錄 { map: 'textures/xxx.png', ... }。
  */
@@ -774,7 +806,9 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
   }
 
   // ---- 水面 ----
-  const water = waterSurfaceFrom(source, (root.getDefaultScene() ?? root.listScenes()[0])?.getExtras().frontline_water as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
+  const sceneExtras = (root.getDefaultScene() ?? root.listScenes()[0])?.getExtras();
+  const water = waterSurfaceFrom(source, sceneExtras?.frontline_water as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
+  const grass = grassFieldFrom(source, sceneExtras?.frontline_grass as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
 
   // ---- manifest ----
   const minY = Math.min(
@@ -797,6 +831,7 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     collision: 'collision.json',
     ...(library ? { library: { path: library.path, byteLength: library.bytes } } : {}),
     ...(water ? { water } : {}),
+    ...(grass ? { grass } : {}),
     spawns,
     objectives,
     restrictedAreas,
