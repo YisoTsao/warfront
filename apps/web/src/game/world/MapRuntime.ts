@@ -6,6 +6,7 @@ import { CloudLayer } from './CloudLayer';
 import { applyEnvironment, followShadow, type EnvironmentHandles } from './Environment';
 import { GRASS_QUALITY, GrassField, type GrassQuality } from './GrassField';
 import { buildGrayboxVisuals } from './GrayboxMap';
+import { TerrainMaterials } from './TerrainMaterial';
 import { WaterMaterials } from './WaterMaterial';
 
 export { AVAILABLE_MAPS } from './maps';
@@ -34,8 +35,13 @@ export class MapRuntime {
     private readonly water: WaterMaterials,
     private readonly clouds: CloudLayer | null,
     private readonly grass: GrassField | null,
+    private readonly terrain: TerrainMaterials,
   ) {}
   private time = 0;
+  private savedFog: THREE.Scene['fog'] = null;
+  private savedBackground: THREE.Scene['background'] = null;
+  private readonly underwaterFog = new THREE.Fog(0x0b3532, 0.2, 14);
+  private underwater = false;
 
   static async load(
     mapId: string,
@@ -87,6 +93,7 @@ export class MapRuntime {
       water.excludeFromReflection(grass.group);
     }
     water.setReflectionScale(reflectionScale);
+    const terrain = await TerrainMaterials.load(data.manifest.terrain, data.manifest.water, data.baseUrl, renderer);
     let streamer: ChunkStreamer | null = null;
     let graybox: THREE.Group | null = null;
     if (mapId === GRAYBOX_MAP_ID) {
@@ -94,12 +101,12 @@ export class MapRuntime {
     } else {
       streamer = new ChunkStreamer(data.manifest, data.baseUrl, scene, renderer, shadows);
       streamer.distanceScale = streamScale;
-      streamer.replaceMaterial = (mesh) => water.apply(mesh);
+      streamer.replaceMaterial = (mesh) => terrain.apply(mesh) || water.apply(mesh);
       const start = focus ?? new THREE.Vector3(...(data.manifest.spawns[0]?.position ?? [0, 0, 0]));
       await streamer.preload(start, (done, total) => onProgress?.({ stage: 'chunks', done, total }));
     }
     onProgress?.({ stage: 'ready', done: 1, total: 1 });
-    return new MapRuntime(data.manifest, sim, scene, environment, streamer, graybox, water, clouds, grass);
+    return new MapRuntime(data.manifest, sim, scene, environment, streamer, graybox, water, clouds, grass, terrain);
   }
 
   get id(): string {
@@ -116,6 +123,7 @@ export class MapRuntime {
     this.shadowFocus.copy(focus);
     this.time += frameSeconds;
     this.water.update(this.time);
+    this.terrain.update(this.time);
     this.clouds?.update(this.time);
     this.grass?.update(focus, this.time);
     followShadow(this.environment.sun, this.shadowFocus, this.manifest.environment.sunDirection);
@@ -126,8 +134,48 @@ export class MapRuntime {
     }
   }
 
+  /**
+   * 鏡頭所在的水深（公尺；不在水下為 0）。水下時把霧與背景換成水色（深水看得更近），
+   * 並畫水面背面；回到水面上時還原。
+   */
+  updateCamera(camera: THREE.Vector3): number {
+    let depth = 0;
+    let deep = false;
+    for (const v of this.manifest.waterVolumes) {
+      const b = v.bounds;
+      if (camera.x < b.min[0] || camera.x > b.max[0] || camera.z < b.min[2] || camera.z > b.max[2] || camera.y < b.min[1]) continue;
+      // 水體上緣比水面高 0.05 m（見森林谷地匯入器）
+      const d = b.max[1] - 0.05 - camera.y;
+      if (d > depth) {
+        depth = d;
+        deep = v.depth === 'deep';
+      }
+    }
+    const under = depth > 0;
+    if (under !== this.underwater) {
+      this.underwater = under;
+      if (under) {
+        this.savedFog = this.scene.fog;
+        this.savedBackground = this.scene.background;
+        this.scene.fog = this.underwaterFog;
+        this.scene.background = this.underwaterFog.color;
+      } else {
+        this.scene.fog = this.savedFog;
+        this.scene.background = this.savedBackground;
+      }
+      this.water.setUnderwater(under);
+    }
+    if (under) {
+      this.underwaterFog.far = (deep ? 11 : 16) - Math.min(depth, 4) * 1.2;
+      this.underwaterFog.color.setRGB(0.04, 0.2, 0.19).multiplyScalar(1 - Math.min(depth, 5) * 0.1);
+    }
+    return depth;
+  }
+
   setQuality(options: { shadows: boolean; shadowMapSize: number; streamScale: number; grass: GrassQuality; reflectionScale: number }): void {
     this.grass?.setQuality(options.grass);
+    // 地形細節貼圖淡回底色的距離跟著植被畫質（低 120 m、中 200 m、高 260 m）
+    this.terrain.setDetailDistance(options.grass.near <= GRASS_QUALITY.low.near ? 120 : options.grass.near <= GRASS_QUALITY.medium.near ? 200 : 260);
     this.water.setReflectionScale(options.reflectionScale);
     this.environment.sun.castShadow = options.shadows;
     if (this.environment.sun.shadow.mapSize.x !== options.shadowMapSize) {
@@ -157,6 +205,7 @@ export class MapRuntime {
     }
     this.environment.dispose();
     this.water.dispose();
+    this.terrain.dispose();
     this.clouds?.dispose();
     this.grass?.dispose();
     this.sim.dispose();

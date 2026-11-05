@@ -15,6 +15,8 @@ export interface LodPlan {
   lod1Solid: number;
   /** LOD1 保留的葉片卡比例 */
   lod1Cards: number;
+  /** 遠景 LOD2（只給樹）：實心網格比例、保留的葉片卡比例與卡片放大倍率（補回樹冠覆蓋面積） */
+  lod2?: { solid: number; cards: number; grow: number };
 }
 
 export const isCardMaterial = (prim: Primitive) => prim.getMaterial()?.getAlphaMode() !== 'OPAQUE';
@@ -58,6 +60,27 @@ function thinnedCards(prim: Primitive, keep: number): Uint32Array | null {
   return out.length >= 3 ? Uint32Array.from(out) : null;
 }
 
+/** 每張卡片（相鄰兩個三角形的四個頂點）以自己的中心放大；位置改成獨立的 accessor，不影響其他層級。 */
+function growCards(doc: Document, prim: Primitive, grow: number): void {
+  const indices = prim.getIndices()?.getArray();
+  const position = prim.getAttribute('POSITION');
+  if (!indices || !position) return;
+  const src = position.getArray() as Float32Array;
+  const out = Float32Array.from(src);
+  const done = new Uint8Array(src.length / 3);
+  for (let q = 0; q + 5 < indices.length; q += 6) {
+    const verts = [...new Set<number>(Array.from(indices.subarray(q, q + 6) as ArrayLike<number>))];
+    const c = [0, 0, 0];
+    for (const v of verts) for (let k = 0; k < 3; k++) c[k]! += src[v * 3 + k]! / verts.length;
+    for (const v of verts) {
+      if (done[v]) continue;
+      done[v] = 1;
+      for (let k = 0; k < 3; k++) out[v * 3 + k] = c[k]! + (src[v * 3 + k]! - c[k]!) * grow;
+    }
+  }
+  prim.setAttribute('POSITION', doc.createAccessor().setType('VEC3').setArray(out).setBuffer(doc.getRoot().listBuffers()[0]!));
+}
+
 /** 換上新的索引，並只保留用到的頂點（LOD 不再背著完整的頂點陣列）。 */
 function withIndices(doc: Document, prim: Primitive, indices: Uint32Array | null): Primitive {
   const copy = prim.clone();
@@ -68,14 +91,20 @@ function withIndices(doc: Document, prim: Primitive, indices: Uint32Array | null
   return copy;
 }
 
-/** 把 mesh 改名為 X_LOD0（依計畫簡化）並建立 X_LOD1。回傳 LOD0 網格。 */
+/** 把 mesh 改名為 X_LOD0（依計畫簡化）並建立 X_LOD1（與計畫有 lod2 時的 X_LOD2）。回傳 LOD0 網格。 */
 export async function buildLods(doc: Document, mesh: Mesh, plan: LodPlan): Promise<Mesh> {
   await MeshoptSimplifier.ready;
   const base = mesh.getName();
   const lod1 = doc.createMesh(`${base}_LOD1`);
+  const lod2 = plan.lod2 ? doc.createMesh(`${base}_LOD2`) : null;
   for (const prim of mesh.listPrimitives()) {
     const card = isCardMaterial(prim);
     lod1.addPrimitive(withIndices(doc, prim, card ? thinnedCards(prim, plan.lod1Cards) : simplifiedIndices(prim, plan.lod1Solid)));
+    if (lod2 && plan.lod2) {
+      const copy = withIndices(doc, prim, card ? thinnedCards(prim, plan.lod2.cards) : simplifiedIndices(prim, plan.lod2.solid));
+      if (card) growCards(doc, copy, plan.lod2.grow);
+      lod2.addPrimitive(copy);
+    }
     if (!card && plan.lod0Solid < 0.999) {
       const reduced = simplifiedIndices(prim, plan.lod0Solid);
       if (reduced) {

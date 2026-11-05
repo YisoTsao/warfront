@@ -557,6 +557,61 @@ function grassFieldFrom(source: Document, settings: Record<string, unknown> | un
   };
 }
 
+/** 依名稱找來源 GLB 內的貼圖 */
+function namedImage(source: Document, name: unknown): { image: Uint8Array; mime: string; name: string } | null {
+  const texture = source.getRoot().listTextures().find((t) => t.getName() === name);
+  return texture?.getImage() ? { image: texture.getImage()!, mime: texture.getMimeType() || 'image/png', name: texture.getName() } : null;
+}
+
+/**
+ * 來源場景的 extras.frontline_terrain：地形圖層權重圖與各圖層的細節貼圖（以貼圖名稱指向 GLB 內的圖），
+ * 寫到 textures/ 並轉成 manifest.terrain。
+ */
+function terrainSurfaceFrom(source: Document, settings: Record<string, unknown> | undefined, outDir: string, written: Map<string, number>, warnings: string[]): MapManifest['terrain'] {
+  if (!settings) {
+    return undefined;
+  }
+  const write = (name: unknown) => {
+    const img = namedImage(source, name);
+    return img ? writeTextureFile(outDir, img.name, img.image, img.mime, written) : null;
+  };
+  const splat = write(settings.splat_texture);
+  const splat2 = write(settings.splat2_texture);
+  const across = write(settings.across_texture);
+  const origin = settings.origin;
+  const size = num(settings.size);
+  const layers = Array.isArray(settings.layers)
+    ? (settings.layers as Array<Record<string, unknown>>).map((l) => ({ name: String(l.name), albedo: write(l.albedo), normal: write(l.normal), tile: num(l.tile) }))
+    : [];
+  if (!splat || !splat2 || !across || !Array.isArray(origin) || origin.length !== 2 || !size || layers.length !== 6 || layers.some((l) => !l.albedo || !l.normal || !l.tile)) {
+    warnings.push('frontline_terrain 設定不完整（需要 splat_texture、splat2_texture、across_texture、6 個 layers、origin、size），地形只用底色貼圖');
+    return undefined;
+  }
+  return {
+    splatMap: splat,
+    splat2Map: splat2,
+    acrossMap: across,
+    layers: layers.map((l) => ({ name: l.name, albedo: l.albedo!, normal: l.normal!, tile: l.tile! })),
+    origin: [Number(origin[0]), Number(origin[1])],
+    size,
+  };
+}
+
+/** 來源場景的 extras.frontline_minimap：小地圖影像，寫到 textures/ 並轉成 manifest.minimap。 */
+function minimapFrom(source: Document, settings: Record<string, unknown> | undefined, outDir: string, written: Map<string, number>, warnings: string[]): MapManifest['minimap'] {
+  if (!settings) {
+    return undefined;
+  }
+  const img = namedImage(source, settings.texture);
+  const origin = settings.origin;
+  const size = num(settings.size);
+  if (!img || !Array.isArray(origin) || origin.length !== 2 || !size) {
+    warnings.push('frontline_minimap 設定不完整（需要 texture、origin、size），已略過小地圖影像');
+    return undefined;
+  }
+  return { image: writeTextureFile(outDir, img.name, img.image, img.mime, written), origin: [Number(origin[0]), Number(origin[1])], size };
+}
+
 /**
  * 把材質用到的貼圖寫到 textures/（依內容雜湊命名，同一張只寫一次），
  * 材質改成在 extras.frontline_textures 記錄 { map: 'textures/xxx.png', ... }。
@@ -711,8 +766,11 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     const cx = (b.min[0] + b.max[0]) / 2;
     const cz = (b.min[2] + b.max[2]) / 2;
     const size = c.role === 'ENV_Terrain' ? terrainChunkSize : chunkSize;
-    const ix = Math.floor((cx - mapBounds.min[0]) / size);
-    const iz = Math.floor((cz - mapBounds.min[2]) / size);
+    // 物件包圍盒中心可能稍微超出地圖（例如邊緣的樹冠偏一側），夾回地圖內的分塊，不另外產生一個分塊
+    const cols = Math.max(1, Math.ceil((mapBounds.max[0] - mapBounds.min[0]) / size));
+    const rows = Math.max(1, Math.ceil((mapBounds.max[2] - mapBounds.min[2]) / size));
+    const ix = Math.min(cols - 1, Math.max(0, Math.floor((cx - mapBounds.min[0]) / size)));
+    const iz = Math.min(rows - 1, Math.max(0, Math.floor((cz - mapBounds.min[2]) / size)));
     const id = `${c.role === 'ENV_Terrain' ? 'terrain' : 'detail'}-${ix}-${iz}`;
     const entry = chunkMembers.get(id) ?? { indices: [], bounds: emptyBox(), terrain: c.role === 'ENV_Terrain' };
     entry.indices.push(c.index);
@@ -809,6 +867,8 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
   const sceneExtras = (root.getDefaultScene() ?? root.listScenes()[0])?.getExtras();
   const water = waterSurfaceFrom(source, sceneExtras?.frontline_water as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
   const grass = grassFieldFrom(source, sceneExtras?.frontline_grass as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
+  const terrainSurface = terrainSurfaceFrom(source, sceneExtras?.frontline_terrain as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
+  const minimap = minimapFrom(source, sceneExtras?.frontline_minimap as Record<string, unknown> | undefined, options.outDir, textureFiles, warnings);
 
   // ---- manifest ----
   const minY = Math.min(
@@ -832,6 +892,8 @@ export async function buildMap(options: BuildOptions): Promise<BuildReport> {
     ...(library ? { library: { path: library.path, byteLength: library.bytes } } : {}),
     ...(water ? { water } : {}),
     ...(grass ? { grass } : {}),
+    ...(terrainSurface ? { terrain: terrainSurface } : {}),
+    ...(minimap ? { minimap } : {}),
     spawns,
     objectives,
     restrictedAreas,

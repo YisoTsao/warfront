@@ -5,7 +5,7 @@
  *   warfront (X, Y, Z) = (x, z, −y)
  * 高度圖的第 0 列是北邊（y = +size/2），第 0 欄是西邊（x = −size/2）。
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
 
@@ -75,6 +75,24 @@ export function readR16(path: string, lo: number, hi: number, size: number): Gri
 
 /** 讀取灰階 PNG 的第一個通道，換算成 0–1（16 位元圖乘上 scale 可得實際值）。 */
 export async function readMask(path: string, size: number, scale = 1): Promise<Grid> {
+  return readGray(path, size, (v, max) => (v / max) * scale);
+}
+
+/**
+ * 林區圖（每格一個林區編號）拆成每個林區一張 0／1 格網；雙線性取樣時林區邊界會自然過渡。
+ * 編號對照取自 vegetation_meta.json 的 zones.values（0 = 水域）。
+ */
+async function readZones(path: string, size: number, values: Record<string, number>): Promise<Record<string, Grid>> {
+  const index = await readGray(path, size, (v) => v);
+  const out: Record<string, Grid> = {};
+  for (const [name, id] of Object.entries(values)) {
+    if (id === 0) continue;
+    out[name] = new Grid(index.data.map((v) => (v === id ? 1 : 0)), index.res, size);
+  }
+  return out;
+}
+
+async function readGray(path: string, size: number, convert: (value: number, max: number) => number): Promise<Grid> {
   const image = sharp(path);
   const meta = await image.metadata();
   const sixteen = meta.depth === 'ushort';
@@ -90,7 +108,7 @@ export async function readMask(path: string, size: number, scale = 1): Promise<G
   const max = sixteen ? 65535 : 255;
   const out = new Float32Array(info.width * info.height);
   for (let i = 0; i < out.length; i++) {
-    out[i] = (values[i * info.channels]! / max) * scale;
+    out[i] = convert(values[i * info.channels]!, max);
   }
   return new Grid(out, info.width, size);
 }
@@ -127,6 +145,9 @@ export interface Layout {
   structures: Array<{ name: string; site: string; location_m: V3; yaw_deg: number; colliders: LayoutCollider[] }>;
 }
 
+/** phase3 的林區（stand）：河岸林、闊葉林、混交林、松林、雲杉林、枯木林 */
+export type ForestZone = 'riparian' | 'broadleaf' | 'mixed' | 'pine' | 'spruce' | 'deadwood';
+
 export interface ForestSources {
   dir: string;
   size: number;
@@ -140,6 +161,8 @@ export interface ForestSources {
   density: Record<'grass' | 'flowers' | 'moss' | 'needle' | 'leaf' | 'canopy' | 'scree', Grid>;
   vegetation: Record<string, InstanceSet>;
   rocks: Record<string, InstanceSet>;
+  /** 林區（phase3 的 forest_zones 圖；舊版輸出沒有這張圖時為空物件） */
+  zones: Partial<Record<ForestZone, Grid>>;
   layout: Layout;
   /** 水深圖的最大值（公尺）與流向圖的最大流速（m/s） */
   waterScale: { maxDepth: number; maxSpeed: number };
@@ -174,6 +197,9 @@ export async function readForestSources(dir: string): Promise<ForestSources> {
     veg('canopy'),
     readMask(p('phase4_rocks', 'scree_513.png'), size),
   ]);
+  const vegMeta = readJson<{ zones?: { map: string; values: Record<string, number> } }>(p('phase3_vegetation', 'vegetation_meta.json'));
+  const zoneMap = vegMeta.zones ? p('phase3_vegetation', vegMeta.zones.map) : null;
+  const zones = zoneMap && existsSync(zoneMap) ? await readZones(zoneMap, size, vegMeta.zones!.values) : {};
   return {
     dir,
     size,
@@ -184,6 +210,7 @@ export async function readForestSources(dir: string): Promise<ForestSources> {
     density: { grass, flowers, moss, needle, leaf, canopy, scree },
     vegetation: readJson(p('phase3_vegetation', 'vegetation_instances.json')),
     rocks: readJson(p('phase4_rocks', 'rock_instances.json')),
+    zones,
     layout: readJson(p('phase5_environment', 'environment_layout.json')),
     waterScale: { maxDepth: water.water_depth_map.value_65535_m, maxSpeed: water.flowmap.vmax_m_s },
     files: {

@@ -15,6 +15,8 @@ export class Renderer {
   private readonly postScene = new THREE.Scene();
   private readonly postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private postEnabled = false;
+  private readonly underwaterScene = new THREE.Scene();
+  private readonly underwaterUniforms = { uDepth: { value: 0 }, uTime: { value: 0 } };
 
   constructor(
     private readonly container: HTMLElement,
@@ -58,6 +60,38 @@ export class Renderer {
     vignette.frustumCulled = false;
     this.postScene.add(vignette);
 
+    // 水下：水色漸層、從水面灑下的光束、越深越暗（鏡頭在水下時才畫）
+    const underwater = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: this.underwaterUniforms,
+        vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: /* glsl */ `
+          uniform float uDepth;
+          uniform float uTime;
+          varying vec2 vUv;
+          float h(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+          float n1(float x) { float i = floor(x); float f = fract(x); return mix(h(i), h(i + 1.0), f * f * (3.0 - 2.0 * f)); }
+          void main() {
+            float k = clamp(uDepth / 4.0, 0.0, 1.0);
+            // 光束：沿畫面斜向的帶狀雜訊，越往上越亮、隨時間飄動
+            float x = vUv.x * 1.4 + (1.0 - vUv.y) * 0.35;
+            float rays = pow(n1(x * 9.0 + uTime * 0.25) * n1(x * 23.0 - uTime * 0.4), 1.6) * smoothstep(0.15, 1.0, vUv.y) * (1.0 - k * 0.6);
+            vec3 tint = mix(vec3(0.05, 0.24, 0.22), vec3(0.01, 0.07, 0.07), k);
+            float edge = smoothstep(0.3, 0.9, length(vUv - 0.5) * 1.3);
+            vec3 color = tint + vec3(0.35, 0.55, 0.5) * rays * 0.5;
+            float alpha = 0.32 + 0.35 * k + edge * 0.35 + rays * 0.15;
+            gl_FragColor = vec4(color, clamp(alpha, 0.0, 0.9));
+          }
+        `,
+      }),
+    );
+    underwater.frustumCulled = false;
+    this.underwaterScene.add(underwater);
+
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
@@ -92,6 +126,12 @@ export class Renderer {
 
   get currentRenderScale(): number {
     return this.renderScale;
+  }
+
+  /** 鏡頭的水深（0 = 不在水下）與時間（光束飄動） */
+  setUnderwater(depth: number, seconds: number): void {
+    this.underwaterUniforms.uDepth.value = depth;
+    this.underwaterUniforms.uTime.value = seconds;
   }
 
   setPostProcessing(enabled: boolean): void {
@@ -129,6 +169,9 @@ export class Renderer {
       const fog = this.overlayScene.fog;
       this.renderer.render(this.overlayScene, this.camera);
       this.overlayScene.fog = fog;
+    }
+    if (this.underwaterUniforms.uDepth.value > 0) {
+      this.renderer.render(this.underwaterScene, this.postCamera);
     }
     if (this.postEnabled) {
       this.renderer.render(this.postScene, this.postCamera);

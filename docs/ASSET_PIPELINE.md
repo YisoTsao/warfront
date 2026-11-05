@@ -109,6 +109,12 @@ bun run maps:forest -- --source ../blender-mcp-asset-generator/output
 1. **組成來源 GLB**（`assets/blender-source/exports/forest-valley.glb`，不進版控，可隨時重建）：
    - 地形：phase5 整地後的 1025 高度圖每隔一點取樣（513 × 513，約 1 m 間距），切成 4 × 4 視覺分塊；同一組樣本輸出成碰撞高度場。底色貼圖（2048²）依植被密度、坡度、碎石、道路、壕溝、營地與水域畫成。
    - 水面與瀑布：`water_meshes.glb`；水域判定由水面遮罩與水深圖切成 8 m 方塊（深度超過 1.3 m 為深水）。水面材質標記 `frontline_shader = water / waterfall`，Blender 的流向圖（流向、流速、泡沫）與水深圖轉成兩張 1024² 貼圖，經場景的 `frontline_water` 設定寫進 `manifest.water`，前端的水面 shader 使用。
+   - 樹種與林區：phase3 先把地圖分成六種林區（河岸林、闊葉林、混交林、松林、雲杉林、枯木林；依相對高度、坡向、濕度加上低頻雜訊決定，邊界有窄的混合帶），每種林區有自己的密度與樹種比例；部分山脈由大尺度雜訊選中，樹林一路長到山坡上（坡度上限 +8°、樹線較高、密度 ×2.6）。樹種共 7 種：松、雲杉、橡、楓、赤楊、樺、枯木。林區圖（`forest_zones_513.png`，編號見 `vegetation_meta.json` 的 `zones`）用來畫地形底色：河岸林地面較潮濕、枯木林有焦黑痕跡。
+   - 樹皮：Poly Haven 的 CC0 掃描貼圖（Blender 專案的 `assets/textures/bark/`，來源見該目錄的 `SOURCE.md`），UV 依貼圖實際尺寸換算，匯入時保留貼圖、底色設為白色（×0.8）。樺樹維持程序化白樹皮。
+   - 地表起伏：Blender 的高度圖很平滑，匯入時加上 3 m／9 m 尺度的小起伏，陡坡再加上不規則的岩層（層高 2.5–6 m 隨位置變化）與沿坡溝槽；道路、營地、建築、橋與水域周圍不加。植被與岩石的高度依整地後的地形重新貼地，碰撞高度場與視覺網格一致。
+   - 地形細節（`manifest.terrain`）：六種 Poly Haven CC0 掃描貼圖（草地、林地落葉、岩石、泥土路面、碎石、河岸泥地，見 `assets/textures/terrain/SOURCE.md`），權重圖依植被密度、坡度、碎石、道路與水域畫成；另有路面橫向座標（車轍）與積水圖。前端地形 shader 以高度混合各圖層、岩石用三向投影、遠處淡回底色，並在水底畫焦散。
+   - 小地圖（`manifest.minimap`）：俯視衛星圖（地形底色 × 山影、水深上色、每棵樹的樹冠與陰影），小地圖與完整地圖（按 M 開關）都畫在它上面。
+   - 樹的 LOD：LOD0（55 m 內）、LOD1（130 m 內，葉片卡 22–40%）、LOD2（遠景，樹幹 5%、葉片卡 8% 並放大 1.9 倍）。LOD1 以後不投影；某一層沒有實例時不畫。
    - 植被與岩石：依 `vegetation_instances.json`、`rock_instances.json` 擺放（Blender 座標 Z 朝上、公分 → 本專案 Y 朝上、公尺），套用 phase5 在 Blender 內做的清理（道路、壕溝、橋、營地附近移除，伐木場 75% 的樹砍掉）並依整地高度差重新貼地。LOD 由 meshoptimizer 產生：岩石 LOD0 簡化到 30%、LOD1 6%；樹的葉片卡依間隔保留 30–40%。
    - 建築：`structures.glb`（道路網格不匯入，已畫進地形底色）；碰撞用 `environment_layout.json` 的方塊與膠囊（膠囊的軸向由結構網格頂點的主成分推算）。樹幹、原木、岩石另外加上縮小的方塊碰撞，避免隱形牆。
    - 遊戲標記：兩隊出生點用 phase5 的 HQ 出生建議點（南方 HQ = alpha、北方 HQ = bravo）；征服據點 A 橋梁、B 農舍、C 教堂遺跡、D 伐木場；敵方基地禁區；地圖四周只擋人的邊界牆。

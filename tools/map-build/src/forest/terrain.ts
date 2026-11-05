@@ -135,6 +135,10 @@ const PALETTE = {
   trail: [0.1, 0.08, 0.055],
   trench: [0.05, 0.04, 0.028],
   pad: [0.11, 0.095, 0.07],
+  /** 河岸林：潮濕的深色泥土 */
+  damp: [0.045, 0.04, 0.026],
+  /** 枯木林：焦黑、乾枯的地面 */
+  burnt: [0.05, 0.045, 0.038],
 } satisfies Record<string, RGB>;
 
 function hash2(x: number, y: number): number {
@@ -259,8 +263,13 @@ export async function terrainAlbedo(src: ForestSources, layout: Layout, px = 204
       ] as const) {
         color = [color[0] + col[0] * (w / total), color[1] + col[1] * (w / total), color[2] + col[2] * (w / total)];
       }
+      // 林區：河岸林的地面較潮濕、枯木林有燒焦與乾枯的痕跡（草地上減弱）
+      const open = 1 - Math.min(1, wGrass);
+      color = mix(color, PALETTE.damp, (src.zones.riparian?.sample(x, y) ?? 0) * 0.45 * open);
+      color = mix(color, PALETTE.burnt, (src.zones.deadwood?.sample(x, y) ?? 0) * (0.35 + 0.3 * valueNoise(x / 5, y / 5)) * open);
       const slope = src.graded.slopeDegrees(x, y);
-      color = mix(color, PALETTE.rock, smoothstep(36, 52, slope) * 0.9);
+      // 陡坡露出岩石；山坡上的樹林底下是林地，不畫成岩壁
+      color = mix(color, PALETTE.rock, smoothstep(36, 52, slope) * 0.9 * (1 - 0.75 * Math.min(1, d.canopy.sample(x, y) * 1.6)));
       color = mix(color, PALETTE.scree, Math.min(1, d.scree.sample(x, y) * 1.4));
       color = mix(color, PALETTE.pad, covers.pad(x, y) * 0.8);
       const i = r * px + c;
@@ -307,4 +316,246 @@ export async function grassDensityMap(src: ForestSources, layout: Layout, px = 5
     }
   }
   return sharp(rgb, { raw: { width: px, height: px, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer();
+}
+
+// ---- 地形起伏與細節圖層 ----
+
+/** 0–1 的分形值雜訊（幾個八度的 valueNoise） */
+function fbm(x: number, y: number, octaves: number): number {
+  let sum = 0;
+  let amp = 0.5;
+  let norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum += valueNoise(x, y) * amp;
+    norm += amp;
+    x = x * 2.03 + 17.1;
+    y = y * 2.03 - 9.4;
+    amp *= 0.5;
+  }
+  return sum / norm;
+}
+
+/**
+ * 地形起伏：Blender 的高度圖很平滑（看起來像塑膠），在這裡加上
+ * - 地表小起伏：約 3 m、9 m 兩種尺度的土丘與凹陷（±0.2 m 左右）；
+ * - 山坡岩層：陡坡上把高度往 3.5 m 一階的層狀拉，加上沿坡的溝槽雜訊，形成岩層與小崖；
+ * 道路、營地、壕溝、橋與水域附近不加（建築、水面與道路都依原本的高度擺放）。
+ * 直接改 src.graded：植被與岩石實例的高度 = Blender 高度 + (graded − carved)，所以會一起貼地。
+ */
+export function applyRelief(src: ForestSources, flat: (x: number, y: number) => number): void {
+  const g = src.graded;
+  const before = Float32Array.from(g.data);
+  const at = (r: number, c: number) => before[Math.min(g.res - 1, Math.max(0, r)) * g.res + Math.min(g.res - 1, Math.max(0, c))]!;
+  for (let r = 0; r < g.res; r++) {
+    const y = g.half - r * g.cell;
+    for (let c = 0; c < g.res; c++) {
+      const x = -g.half + c * g.cell;
+      const keep = 1 - flat(x, y);
+      if (keep <= 0) continue;
+      // 坡度（以原本的高度計算）
+      const dx = (at(r, c + 2) - at(r, c - 2)) / (4 * g.cell);
+      const dy = (at(r - 2, c) - at(r + 2, c)) / (4 * g.cell);
+      const slope = (Math.atan(Math.hypot(dx, dy)) * 180) / Math.PI;
+      const h = before[r * g.res + c]!;
+      // 地表小起伏：平地明顯、陡坡上交給岩層
+      const bumps = (fbm(x / 3.2, y / 3.2, 2) - 0.5) * 0.28 + (fbm(x / 9 + 40, y / 9 - 13, 3) - 0.5) * 0.45;
+      let delta = bumps * (1 - 0.6 * smoothstep(25, 40, slope));
+      // 岩層：陡坡上把高度往層狀拉（層高 2.5–6 m 隨位置變化、層面傾斜起伏），
+      // 強度也隨位置變化（有的地方是明顯的岩階，有的只是粗糙的坡），再加上沿坡的溝槽與碎塊
+      const rock = smoothstep(26, 40, slope);
+      if (rock > 0) {
+        const step = 2.5 + 3.5 * fbm(x / 70 + 11, y / 70 - 5, 2);
+        const strataNoise = (fbm(x / 25, y / 25, 3) - 0.5) * step * 1.6;
+        const t = (h + strataNoise) / step;
+        const f = t - Math.floor(t);
+        const terraced = (Math.floor(t) + smoothstep(0.4, 1, f)) * step - strataNoise;
+        const strength = 0.08 + 0.32 * smoothstep(0.35, 0.75, fbm(x / 45 - 30, y / 45 + 60, 2));
+        const gully = (fbm(x / 7 + 300, y / 7 - 200, 3) - 0.5) * 2.2 + (fbm(x / 2.2, y / 2.2 + 90, 2) - 0.5) * 0.6;
+        delta += rock * ((terraced - h) * strength + gully);
+      }
+      g.data[r * g.res + c] = h + delta * keep;
+    }
+  }
+}
+
+/** 道路的覆蓋率與橫向座標（−1 = 左路肩、0 = 路中央、1 = 右路肩），用來畫車轍。 */
+function roadField(px: number, size: number, lines: Array<{ points: V2[]; halfWidth: number }>): { cover: Float32Array; across: Float32Array } {
+  const cover = new Float32Array(px * px);
+  const across = new Float32Array(px * px);
+  const dist = new Float32Array(px * px).fill(Infinity);
+  const cell = size / (px - 1);
+  const toPx = (v: number) => ((v + size / 2) / size) * (px - 1);
+  for (const line of lines) {
+    const reach = line.halfWidth + 1.5;
+    for (let i = 0; i + 1 < line.points.length; i++) {
+      const [ax, ay] = line.points[i]!;
+      const [bx, by] = line.points[i + 1]!;
+      const minC = Math.max(0, Math.floor(toPx(Math.min(ax, bx) - reach)));
+      const maxC = Math.min(px - 1, Math.ceil(toPx(Math.max(ax, bx) + reach)));
+      const minR = Math.max(0, Math.floor(((size / 2 - Math.max(ay, by) - reach) / size) * (px - 1)));
+      const maxR = Math.min(px - 1, Math.ceil(((size / 2 - Math.min(ay, by) + reach) / size) * (px - 1)));
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      for (let r = minR; r <= maxR; r++) {
+        const y = size / 2 - r * cell;
+        for (let c = minC; c <= maxC; c++) {
+          const x = -size / 2 + c * cell;
+          const t = Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / (len * len)));
+          const d = Math.hypot(x - (ax + dx * t), y - (ay + dy * t));
+          const i2 = r * px + c;
+          if (d / line.halfWidth < dist[i2]!) {
+            dist[i2] = d / line.halfWidth;
+            // 有號距離：在線段的左側為負
+            const side = Math.sign(dx * (y - ay) - dy * (x - ax)) || 1;
+            across[i2] = Math.max(-1, Math.min(1, (side * d) / line.halfWidth));
+            cover[i2] = 1 - smoothstep(0.75, 1.25, d / line.halfWidth);
+          }
+        }
+      }
+    }
+  }
+  return { cover, across };
+}
+
+/**
+ * 地形細節圖層（前端地形 shader 使用，三張 PNG，第 0 列在北邊；不用 alpha 通道，
+ * 有些瀏覽器會把 alpha 為 0 的像素的 RGB 清掉）：
+ *   splat  RGB：R = 林地落葉、G = 岩石、B = 泥土路面
+ *   splat2 RGB：R = 碎石、G = 河岸泥地、B = 路面積水；草地 = 1 − 其他圖層總和
+ *   across 灰階：路面橫向座標（−1 左路肩 … 1 右路肩，×0.5+0.5），畫車轍用
+ */
+export async function terrainLayers(src: ForestSources, layout: Layout, px = 1024): Promise<{ splat: Buffer; splat2: Buffer; across: Buffer }> {
+  const size = src.size;
+  const covers = groundCovers(src, layout, px);
+  const roadLines = Object.values(layout.roads).map((road) => ({ points: road.polyline_xyz_m.map(([x, y]) => [x, y] as V2), halfWidth: road.half_width_m }));
+  const roads = roadField(px, size, roadLines);
+  const splat = Buffer.alloc(px * px * 3);
+  const splat2 = Buffer.alloc(px * px * 3);
+  const across = Buffer.alloc(px * px);
+  const cell = size / (px - 1);
+  const d = src.density;
+  for (let r = 0; r < px; r++) {
+    const y = size / 2 - r * cell;
+    for (let c = 0; c < px; c++) {
+      const x = -size / 2 + c * cell;
+      const i = r * px + c;
+      const slope = src.graded.slopeDegrees(x, y);
+      const canopy = Math.min(1, d.canopy.sample(x, y) * 1.5);
+      const litter = Math.min(1, (d.needle.sample(x, y) + d.leaf.sample(x, y)) * 1.3);
+      const water = Math.min(1, src.waterMask.sample(x, y) * 1.5);
+      // 岩石：陡坡，樹林底下少一點；邊界用雜訊打散
+      const n = fbm(x / 7, y / 7, 3);
+      let rock = smoothstep(30 - 8 * n, 44 - 8 * n, slope) * (1 - 0.6 * canopy);
+      let gravel = Math.min(1, d.scree.sample(x, y) * 1.6) * (0.6 + 0.4 * n);
+      const surface = Math.max(roads.cover[i]!, covers.trail[i]! * 0.9, covers.trench[i]!, covers.pad(x, y) * 0.75);
+      let roadW = surface * (0.75 + 0.25 * fbm(x / 3, y / 3, 2));
+      let forest = smoothstep(0.1, 0.7, litter * (0.7 + 0.6 * fbm(x / 4 + 9, y / 4, 2)));
+      // 河岸泥地：水邊 2–4 m、河岸林裡多一點
+      const bank = Math.max(water, (src.zones.riparian?.sample(x, y) ?? 0) * 0.35 * fbm(x / 5, y / 5 + 7, 2));
+      let mud = Math.min(1, bank * 1.2) * (1 - smoothstep(20, 34, slope));
+      // 依優先順序分配（路面最優先），避免總和超過 1
+      let left = 1;
+      const take = (w: number) => {
+        const v = Math.min(w, left);
+        left -= v;
+        return v;
+      };
+      roadW = take(roadW);
+      rock = take(rock);
+      gravel = take(gravel);
+      mud = take(mud);
+      forest = take(forest);
+      splat[i * 3] = Math.round(forest * 255);
+      splat[i * 3 + 1] = Math.round(rock * 255);
+      splat[i * 3 + 2] = Math.round(roadW * 255);
+      // 積水：路中央、平坦處、不規則的水窪
+      const puddle =
+        roads.cover[i]! > 0.5 && slope < 6 ? smoothstep(0.66, 0.74, fbm(x / 2.5 + 50, y / 2.5 - 30, 3)) * (1 - smoothstep(0.5, 0.85, Math.abs(roads.across[i]!))) : 0;
+      splat2[i * 3] = Math.round(gravel * 255);
+      splat2[i * 3 + 1] = Math.round(mud * 255);
+      splat2[i * 3 + 2] = Math.round(puddle * 255);
+      across[i] = Math.round((roads.across[i]! * 0.5 + 0.5) * 255);
+    }
+  }
+  return {
+    splat: await sharp(splat, { raw: { width: px, height: px, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer(),
+    splat2: await sharp(splat2, { raw: { width: px, height: px, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer(),
+    across: await sharp(across, { raw: { width: px, height: px, channels: 1 } }).png({ compressionLevel: 9 }).toBuffer(),
+  };
+}
+
+// ---- 小地圖（俯視衛星圖）----
+
+export interface MinimapTree {
+  /** warfront 座標（公尺） */
+  x: number;
+  z: number;
+  /** 樹冠半徑（公尺） */
+  radius: number;
+  /** 樹冠顏色（sRGB 0–1） */
+  color: RGB;
+}
+
+/**
+ * 俯視衛星圖（sRGB JPEG，第 0 列在北邊）：地形底色 × 山影（西北方光源），
+ * 水域依水深上色，每棵樹畫成有受光面與陰影的樹冠。
+ */
+export async function minimapImage(src: ForestSources, t: TerrainSamples, albedoJpeg: Buffer, trees: MinimapTree[], px = 1024): Promise<Buffer> {
+  const { data } = await sharp(albedoJpeg).resize(px, px).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const img = new Float32Array(px * px * 3);
+  const size = src.size;
+  const cell = size / px;
+  const lx = -0.6;
+  const lz = -0.6;
+  const ly = 0.53;
+  for (let r = 0; r < px; r++) {
+    const z = -size / 2 + (r + 0.5) * cell;
+    for (let c = 0; c < px; c++) {
+      const x = -size / 2 + (c + 0.5) * cell;
+      const i = r * px + c;
+      const dx = (terrainHeightAt(t, x + cell, z) - terrainHeightAt(t, x - cell, z)) / (2 * cell);
+      const dz = (terrainHeightAt(t, x, z + cell) - terrainHeightAt(t, x, z - cell)) / (2 * cell);
+      const len = Math.hypot(dx, 1, dz);
+      const lambert = Math.max(0, (-dx * lx + ly - dz * lz) / len);
+      const shade = 0.45 + 0.85 * lambert;
+      let rgb: RGB = [(data[i * 3]! / 255) * shade, (data[i * 3 + 1]! / 255) * shade, (data[i * 3 + 2]! / 255) * shade];
+      // 水域：Blender 座標 y = −z
+      const depth = src.waterDepth.sample(x, -z);
+      const wet = Math.min(1, src.waterMask.sample(x, -z) * 1.5);
+      if (wet > 0) {
+        const k = Math.min(1, depth / 2.5);
+        rgb = mix(rgb, mix([0.22, 0.36, 0.34], [0.05, 0.16, 0.2], k), wet * 0.92);
+      }
+      img.set(rgb, i * 3);
+    }
+  }
+  // 樹冠：陰影（往東南偏移）→ 樹冠（中央亮、邊緣暗，受光面偏西北）
+  const paint = (tree: MinimapTree, shadow: boolean) => {
+    const ox = shadow ? tree.radius * 0.45 : 0;
+    const cx = (tree.x + size / 2 + ox) / cell;
+    const cz = (tree.z + size / 2 + ox) / cell;
+    const rp = Math.max(0.8, tree.radius / cell);
+    for (let r = Math.max(0, Math.floor(cz - rp)); r <= Math.min(px - 1, Math.ceil(cz + rp)); r++) {
+      for (let c = Math.max(0, Math.floor(cx - rp)); c <= Math.min(px - 1, Math.ceil(cx + rp)); c++) {
+        const ux = (c + 0.5 - cx) / rp;
+        const uz = (r + 0.5 - cz) / rp;
+        const d = Math.hypot(ux, uz);
+        if (d > 1) continue;
+        const i = (r * px + c) * 3;
+        const a = Math.min(1, (1 - d) * 3);
+        if (shadow) {
+          for (let k = 0; k < 3; k++) img[i + k]! *= 1 - 0.45 * a;
+        } else {
+          const light = 0.7 + 0.5 * Math.max(0, -(ux + uz) * 0.7) - 0.25 * d * d + 0.12 * (hash2(c * 7, r * 13) - 0.5);
+          for (let k = 0; k < 3; k++) img[i + k] = img[i + k]! * (1 - a * 0.92) + tree.color[k]! * light * a * 0.92;
+        }
+      }
+    }
+  };
+  for (const tree of trees) paint(tree, true);
+  for (const tree of trees) paint(tree, false);
+  const out = Buffer.alloc(px * px * 3);
+  for (let i = 0; i < out.length; i++) out[i] = Math.round(Math.min(1, Math.max(0, img[i]!)) * 255);
+  return sharp(out, { raw: { width: px, height: px, channels: 3 } }).jpeg({ quality: 85, mozjpeg: true }).toBuffer();
 }

@@ -58,6 +58,7 @@ const fragmentShader = /* glsl */ `
   uniform sampler2D uReflection;
   uniform float uReflectionOn;
   uniform float uReflectionPlane;
+  uniform float uUnder;
   varying vec3 vWorld;
   varying vec2 vUv;
   varying vec4 vReflection;
@@ -114,6 +115,19 @@ const fragmentShader = /* glsl */ `
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
       #include <fog_fragment>
+      return;
+    }
+
+    if (!gl_FrontFacing) {
+      // ---- 從水下往上看水面：正上方是透出天空的「斯涅爾窗」，斜看是全反射的暗綠水色 ----
+      float up = clamp(-viewDir.y, 0.0, 1.0);
+      float window = smoothstep(0.62, 0.78, up);
+      float ripple = noise(vWorld.xz * 1.3 + uTime * vec2(0.6, 0.4)) * 0.5 + noise(vWorld.xz * 3.1 - uTime * vec2(0.3, 0.7)) * 0.5;
+      vec3 sky = mix(uHorizon, uZenith, 0.5) * 1.1 + uSunColor * 0.25 * smoothstep(0.55, 0.9, ripple);
+      vec3 color = mix(vec3(0.025, 0.09, 0.085), sky, window * (0.75 + 0.25 * ripple));
+      gl_FragColor = vec4(color, 0.92);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
       return;
     }
 
@@ -398,6 +412,7 @@ export class WaterMaterials {
       uReflectionOn: { value: 0 },
       uReflectionPlane: { value: 0 },
       uReflectionMatrix: { value: this.reflection.matrix },
+      uUnder: { value: 0 },
     };
     const make = (mode: number, side: THREE.Side) => {
       const material = new THREE.ShaderMaterial({
@@ -444,6 +459,16 @@ export class WaterMaterials {
 
   update(seconds: number): void {
     this.uniforms.uTime!.value = seconds;
+  }
+
+  /** 鏡頭在水下時畫水面的背面（從下往上看的水面）。 */
+  setUnderwater(under: boolean): void {
+    const side = under ? THREE.DoubleSide : THREE.FrontSide;
+    if (this.water.side !== side) {
+      this.water.side = side;
+      this.water.needsUpdate = true;
+    }
+    this.uniforms.uUnder!.value = under ? 1 : 0;
   }
 
   /** 依 glTF 材質的 extras.frontline_shader 換成水面材質；回傳是否有替換。 */

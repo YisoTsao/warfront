@@ -141,7 +141,10 @@ export abstract class GameBase {
       if (action === 'scoreboard') {
         this.hud.set({ showScoreboard: down });
       } else if (action === 'tacticalMap') {
-        this.hud.set({ showMap: down });
+        // 按一下 M 開關完整地圖（InputManager 已濾掉按住時的重複按鍵）
+        if (down) {
+          this.hud.set({ showMap: !this.hud.get().showMap });
+        }
       }
     };
   }
@@ -270,6 +273,7 @@ export abstract class GameBase {
     this.onFrame(frameSeconds);
     this.effects.update(frameSeconds);
     this.renderer.camera.updateMatrixWorld();
+    this.renderer.setUnderwater(this.map.updateCamera(this.renderer.camera.position), this.simTime);
     this.audio.updateListener(this.renderer.camera, frameSeconds);
     this.tacticalMap.update(frameSeconds, { x: this.interpolated.x, z: this.interpolated.z, yaw: this.cameraRig.yaw }, this.mapMarkers(), this.hud.get().showMap);
     this.renderer.render();

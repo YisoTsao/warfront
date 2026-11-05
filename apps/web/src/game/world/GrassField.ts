@@ -8,6 +8,8 @@ import * as THREE from 'three';
  *   頂點 shader 把格子「包」在玩家周圍：每一格對應一個固定的世界格，玩家移動時只有邊緣的格子換位置，不會整片跳動。
  * - 世界格的雜湊決定位置抖動、方向、高度與是否有花；密度圖（Blender 的草與花密度，已扣掉道路與水域）
  *   決定這一格有沒有草，沒有就把頂點縮成一點（GPU 直接丟掉退化三角形）。
+ * - 五種草：短草、草原草、高草、枯草、闊葉雜草（貼地的蓮座狀寬葉）。約 7 m 與 22 m 兩種尺度的雜訊
+ *   決定每一區偏向哪一種，再加上零星的雜草；成叢雜訊讓草叢之間有空地，不會均勻鋪滿。
  * - 地面高度：碰撞高度場做成浮點貼圖，以 texelFetch 做與碰撞相同的三角內插，草根正好貼地。
  * - 顏色：草根取地形底色貼圖（與地面一致），往葉尖變亮、偏黃綠；花在葉尖上色。
  * - 風：大尺度陣風 + 小尺度擺動，越往葉尖擺幅越大；玩家附近的草往外倒。
@@ -135,20 +137,33 @@ const VERTEX_MAIN = /* glsl */ `
   float edge = 1.0 - smoothstep(uOuter * 0.72, uOuter, dist);
   float inner = uInner > 0.0 ? step(uInner, dist) : 1.0;
   // 密度用平方根：稀疏的地方仍有零星的草，比直接比較雜湊自然
-  float present = step(h3, sqrt(dens.r) * 1.08) * inner * step(0.0, mapUv.x) * step(mapUv.x, 1.0) * step(0.0, mapUv.y) * step(mapUv.y, 1.0);
-  float height = (0.28 + 0.34 * h2 + 0.22 * dens.r) * edge * present;
-  float flower = step(gHash(cell + 3.3), dens.g * 2.2) * present;
+  // 成叢：約 4 m 的雜訊讓草叢之間出現空地
+  float clump = smoothstep(0.18, 0.6, gNoise(rootXZ * 0.23 + 11.0));
+  float present = step(h3, sqrt(dens.r) * 1.08 * (0.35 + 0.75 * clump)) * inner * step(0.0, mapUv.x) * step(mapUv.x, 1.0) * step(0.0, mapUv.y) * step(mapUv.y, 1.0);
+  // ---- 草的種類：0 短草、1 草原草、2 高草、3 枯草、4 闊葉雜草 ----
+  float pA = gNoise(rootXZ * 0.14 + 3.1);
+  float pB = gNoise(rootXZ * 0.045 - 7.7);
+  float kind = pB > 0.64 ? 3.0 : pA > 0.7 ? 2.0 : pB < 0.32 ? 0.0 : 1.0;
+  if (gHash(cell + 5.5) < 0.1 || pA < 0.16) kind = 4.0;
+  // 高度、葉寬、彎曲、葉片數
+  vec4 kp = kind < 0.5 ? vec4(0.5, 0.85, 0.6, 8.0)
+          : kind < 1.5 ? vec4(1.0, 1.0, 1.0, 8.0)
+          : kind < 2.5 ? vec4(1.75, 0.7, 0.45, 6.0)
+          : kind < 3.5 ? vec4(1.15, 0.85, 1.6, 8.0)
+          : vec4(0.4, 3.4, 2.6, 6.0);
+  float height = (0.28 + 0.34 * h2 + 0.22 * dens.r) * kp.x * edge * present;
+  float flower = step(gHash(cell + 3.3), dens.g * 2.2) * present * step(kind, 1.5);
 
   // ---- 葉片：繞中心分布、往外彎 ----
   float t = blade.x;
   float angle = blade.y * 2.39996 + h1 * 6.2832;
   vec2 dir = vec2(cos(angle), sin(angle));
   vec2 side = vec2(-dir.y, dir.x);
-  float spread = (0.03 + 0.22 * gHash(cell + blade.y)) * uTuftScale;
-  float bladeHeight = height * (0.65 + 0.5 * gHash(cell + blade.y * 7.1));
-  float lean = (0.18 + 0.25 * gHash(cell + blade.y * 3.7)) * bladeHeight;
+  float spread = (0.03 + 0.22 * gHash(cell + blade.y)) * uTuftScale * (kind > 3.5 ? 0.25 : 1.0);
+  float bladeHeight = height * (0.65 + 0.5 * gHash(cell + blade.y * 7.1)) * step(blade.y, kp.w - 0.5);
+  float lean = (0.18 + 0.25 * gHash(cell + blade.y * 3.7)) * bladeHeight * kp.z;
   vec3 local = vec3(0.0);
-  local.xz = dir * (spread + lean * t * t) + side * position.x * 0.065 * uTuftScale * (0.8 + 0.4 * h2);
+  local.xz = dir * (spread + lean * t * t) + side * position.x * 0.065 * kp.y * uTuftScale * (0.8 + 0.4 * h2);
   local.y = bladeHeight * t;
 
   // ---- 風與玩家推開 ----
@@ -168,8 +183,14 @@ const VERTEX_MAIN = /* glsl */ `
   // ---- 顏色：草根接近地面，往葉尖變亮；花在葉尖 ----
   vec3 ground = uHasColor > 0.5 ? texture2D(uColor, mapUv).rgb : vec3(0.06, 0.085, 0.03);
   vec3 tipTint = mix(vec3(0.16, 0.2, 0.05), vec3(0.2, 0.17, 0.06), h2 * 0.7);
-  vec3 tip = mix(ground * 1.9, tipTint, 0.55);
-  vGrassColor = mix(ground * 1.15, tip, t);
+  if (kind < 0.5) tipTint = vec3(0.13, 0.21, 0.05);
+  else if (kind < 2.5 && kind > 1.5) tipTint = vec3(0.09, 0.15, 0.06);
+  else if (kind > 2.5 && kind < 3.5) tipTint = mix(vec3(0.33, 0.27, 0.11), vec3(0.26, 0.24, 0.1), h1);
+  else if (kind > 3.5) tipTint = vec3(0.06, 0.12, 0.035);
+  vec3 tip = mix(ground * 1.9, tipTint, kind > 2.5 ? 0.8 : 0.55);
+  vGrassColor = mix(ground * (kind > 2.5 && kind < 3.5 ? 1.5 : 1.15), tip, t);
+  // 每叢草的明暗與色相差異
+  vGrassColor *= 0.85 + 0.3 * gHash(cell + 9.1);
   vec3 flowerColor = h1 < 0.4 ? vec3(0.85, 0.82, 0.7) : h1 < 0.75 ? vec3(0.8, 0.6, 0.08) : vec3(0.42, 0.25, 0.6);
   vGrassColor = mix(vGrassColor, flowerColor, flower * step(0.82, t) * step(blade.y, 1.5));
   vBladeT = t;

@@ -120,6 +120,32 @@ export const GrassFieldSchema = z.object({
 });
 export type GrassField = z.infer<typeof GrassFieldSchema>;
 
+/**
+ * 地形細節（前端地形 shader）：以圖層權重混合多種重複貼圖（掃描的顏色與法線），
+ * 大範圍顏色仍取地形底色貼圖。圖層貼圖都以整張地圖為範圍，第 0 列在 origin 的 Z（北邊）。
+ */
+export const TerrainSurfaceSchema = z.object({
+  /** RGB：R = 林地落葉、G = 岩石、B = 泥土路面 */
+  splatMap: z.string(),
+  /** RGB：R = 碎石、G = 河岸泥地、B = 路面積水；草地 = 1 − 其他圖層總和 */
+  splat2Map: z.string(),
+  /** 灰階：路面橫向座標（×0.5+0.5，−1 左路肩 … 1 右路肩），畫車轍 */
+  acrossMap: z.string(),
+  /** 依序為 grass、forest、rock、road、gravel、mud；tile = 貼圖對應的實際邊長（公尺） */
+  layers: z.array(z.object({ name: z.string(), albedo: z.string(), normal: z.string(), tile: z.number().positive() })).length(6),
+  origin: z.tuple([z.number(), z.number()]),
+  size: z.number().positive(),
+});
+export type TerrainSurface = z.infer<typeof TerrainSurfaceSchema>;
+
+/** 小地圖（俯視的衛星圖）：第 0 列在 origin 的 Z（北邊）、第 0 欄在 origin 的 X（西邊）。 */
+export const MinimapSchema = z.object({
+  image: z.string(),
+  origin: z.tuple([z.number(), z.number()]),
+  size: z.number().positive(),
+});
+export type Minimap = z.infer<typeof MinimapSchema>;
+
 export const MapManifestSchema = z.object({
   schemaVersion: z.literal(MAP_SCHEMA_VERSION),
   id: z.string().regex(/^[a-z0-9-]+$/),
@@ -137,6 +163,10 @@ export const MapManifestSchema = z.object({
   water: WaterSurfaceSchema.optional(),
   /** 草地密度（可選；沒有時不畫草） */
   grass: GrassFieldSchema.optional(),
+  /** 地形細節貼圖（可選；沒有時地形只用底色貼圖） */
+  terrain: TerrainSurfaceSchema.optional(),
+  /** 小地圖影像（可選；沒有時小地圖用簡化的據點圖） */
+  minimap: MinimapSchema.optional(),
   spawns: z.array(SpawnPointSchema).min(1),
   objectives: z.array(ObjectiveSchema).default([]),
   restrictedAreas: z.array(RestrictedAreaSchema).default([]),

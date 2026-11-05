@@ -51,7 +51,7 @@ export const ACTION_LABELS: Record<InputAction, string> = {
   interact: '救援（按住）',
   giveUp: '倒地時放棄（按住）',
   scoreboard: '計分板（按住）',
-  tacticalMap: '戰術地圖（按住）',
+  tacticalMap: '完整地圖（開關）',
 };
 
 /**

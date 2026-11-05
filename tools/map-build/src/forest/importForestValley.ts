@@ -10,18 +10,55 @@
  *   GAMEPLAY_*         兩隊出生點（HQ）、四個征服據點、敵方基地禁區、水域
  *   LIGHTING_Reference 太陽（Blender 燈光預設 noon）
  *
- * Blender 端的程序化材質無法匯出（GLB 裡都是白色），這裡依原始材質腳本的顏色重新指定。
+ * Blender 端的程序化材質無法匯出（GLB 裡都是白色），這裡依原始材質腳本的顏色重新指定；
+ * 樹皮已改用 Poly Haven 的 CC0 掃描貼圖（Blender 端 assets/textures/bark），有貼圖時保留貼圖、底色設為白色。
+ * 樹種與林區（河岸林、闊葉林、混交林、松林、雲杉林、枯木林）由 phase3 決定；林區圖也用來畫地形底色。
  * 草與花（約 22 萬個實例）不匯入成網格，改輸出密度圖（scene extras.frontline_grass），由前端的 GPU 草地系統產生。
  */
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { Document, NodeIO, type Material, type Mesh, type Node } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { copyToDocument, unpartition } from '@gltf-transform/functions';
 import sharp from 'sharp';
 import { buildLods, triangleCount, type LodPlan } from './lod';
-import { readForestSources, toWorld, type ForestSources, type InstanceSet, type Layout, type V2, type V3 } from './sources';
-import { addHeightfieldNode, addTerrainTiles, grassDensityMap, terrainAlbedo, terrainHeightAt, terrainSamples, type TerrainSamples } from './terrain';
+import { Grid, readForestSources, toWorld, type ForestSources, type InstanceSet, type Layout, type V2, type V3 } from './sources';
+import {
+  addHeightfieldNode,
+  addTerrainTiles,
+  applyRelief,
+  grassDensityMap,
+  minimapImage,
+  type MinimapTree,
+  terrainAlbedo,
+  terrainHeightAt,
+  terrainLayers,
+  terrainSamples,
+  type TerrainSamples,
+} from './terrain';
+
+/** 小地圖上的樹冠：半徑（公尺，再乘實例縮放）與顏色（sRGB） */
+const MINIMAP_CROWNS: Record<string, { radius: number; color: [number, number, number] }> = {
+  pine: { radius: 2.6, color: [0.16, 0.24, 0.14] },
+  spruce: { radius: 2.4, color: [0.1, 0.18, 0.13] },
+  oak: { radius: 5.0, color: [0.24, 0.32, 0.13] },
+  maple: { radius: 4.4, color: [0.28, 0.35, 0.12] },
+  alder: { radius: 2.8, color: [0.18, 0.27, 0.12] },
+  birch: { radius: 2.4, color: [0.34, 0.41, 0.17] },
+  dead: { radius: 1.0, color: [0.32, 0.29, 0.24] },
+  bush: { radius: 0.9, color: [0.2, 0.28, 0.11] },
+};
+
+/** 地形細節貼圖（Poly Haven CC0，見 assets/textures/terrain/SOURCE.md）；順序即前端 shader 的圖層索引 */
+const TERRAIN_TEXTURE_DIR = resolve(import.meta.dirname, '../../../../assets/textures/terrain');
+const TERRAIN_DETAIL = [
+  { name: 'grass', file: 'leafy_grass', tile: 2.0 },
+  { name: 'forest', file: 'forest_floor', tile: 2.14 },
+  { name: 'rock', file: 'rock_face_04', tile: 4.0 },
+  { name: 'road', file: 'stony_dirt_path', tile: 2.17 },
+  { name: 'gravel', file: 'rocky_gravel', tile: 1.81 },
+  { name: 'mud', file: 'mud_forest', tile: 2.35 },
+] as const;
 
 type Quat = [number, number, number, number];
 
@@ -92,7 +129,10 @@ const round = (v: number, digits = 3) => Math.round(v * 10 ** digits) / 10 ** di
 
 const MATERIAL_COLORS: Record<string, { color: [number, number, number]; roughness?: number; metallic?: number }> = {
   M_Bark_pine: { color: [0.085, 0.05, 0.03] },
+  M_Bark_spruce: { color: [0.07, 0.055, 0.042] },
   M_Bark_oak: { color: [0.05, 0.042, 0.032] },
+  M_Bark_maple: { color: [0.07, 0.062, 0.05] },
+  M_Bark_alder: { color: [0.1, 0.095, 0.085] },
   M_Bark_birch: { color: [0.52, 0.5, 0.46] },
   M_Bark_dead: { color: [0.24, 0.22, 0.2] },
   M_Bark_log_moss: { color: [0.08, 0.075, 0.045] },
@@ -139,7 +179,11 @@ function fixMaterial(material: Material): void {
     material.setExtras({ frontline_shader: 'waterfall' });
     return;
   }
-  if (spec) {
+  if (spec && material.getName().startsWith('M_Bark_') && material.getBaseColorTexture()) {
+    // 掃描貼圖本身就是顏色；稍微壓暗，和其他以線性代表色指定的材質亮度一致
+    material.setBaseColorFactor([0.8, 0.8, 0.8, 1]).setRoughnessFactor(0.92).setMetallicFactor(0);
+    material.setNormalTexture(null).setMetallicRoughnessTexture(null);
+  } else if (spec) {
     material.setBaseColorFactor([...spec.color, 1]).setRoughnessFactor(spec.roughness ?? 0.9).setMetallicFactor(spec.metallic ?? 0);
   }
   if (material.getAlphaMode() === 'BLEND' && !material.getBaseColorTexture()) {
@@ -162,11 +206,17 @@ interface AssetClass {
   cull?: number;
 }
 
+/** 樹的遠景 LOD2（130 m 以外）：樹幹剩 5%、葉片卡剩 8% 並放大 1.9 倍，遠看只需要樹冠的剪影 */
+const TREE_LOD2 = { solid: 0.05, cards: 0.08, grow: 1.9 };
+
 const VEGETATION: Record<string, AssetClass> = {
-  pine: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.25, lod1Cards: 0.3 }, big: true, collider: 'trunk', material: 'wood' },
-  oak: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.25, lod1Cards: 0.3 }, big: true, collider: 'trunk', material: 'wood' },
-  birch: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.3, lod1Cards: 0.35 }, big: true, collider: 'trunk', material: 'wood' },
-  dead: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.3, lod1Cards: 0.4 }, big: true, collider: 'trunk', material: 'wood' },
+  pine: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.25, lod1Cards: 0.3, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
+  spruce: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.25, lod1Cards: 0.22, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
+  oak: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.25, lod1Cards: 0.3, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
+  maple: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.25, lod1Cards: 0.3, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
+  alder: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.3, lod1Cards: 0.35, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
+  birch: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.3, lod1Cards: 0.35, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
+  dead: { role: 'ENV_Trees', lod: { lod0Solid: 1, lod1Solid: 0.3, lod1Cards: 0.4, lod2: TREE_LOD2 }, big: true, collider: 'trunk', material: 'wood' },
   log: { role: 'ENV_Foliage', lod: { lod0Solid: 1, lod1Solid: 0.3, lod1Cards: 1 }, big: true, collider: 'bounds', boundsScale: 0.85, material: 'wood' },
   bush: { role: 'ENV_Foliage', lod: { lod0Solid: 1, lod1Solid: 0.4, lod1Cards: 0.4 }, big: true, cull: 150 },
   fern: { role: 'ENV_Foliage', lod: { lod0Solid: 1, lod1Solid: 1, lod1Cards: 0.5 }, big: false, cull: 70 },
@@ -312,6 +362,55 @@ function makeClearance(layout: Layout) {
   };
 }
 
+/**
+ * 不加地表起伏的範圍（0–1）：道路、步道、壕溝、橋、營地與建築周圍，以及水域附近。
+ * 以 1025 高度圖的格子為單位先畫成遮罩，起伏邊界有 3 m 的漸變。
+ */
+function flatMask(src: ForestSources, layout: Layout): (x: number, y: number) => number {
+  const g = src.graded;
+  const mask = new Float32Array(g.res * g.res);
+  const disc = (cx: number, cy: number, radius: number, feather = 3) => {
+    const reach = radius + feather;
+    const c0 = Math.max(0, Math.floor((cx - reach + g.half) / g.cell));
+    const c1 = Math.min(g.res - 1, Math.ceil((cx + reach + g.half) / g.cell));
+    const r0 = Math.max(0, Math.floor((g.half - cy - reach) / g.cell));
+    const r1 = Math.min(g.res - 1, Math.ceil((g.half - cy + reach) / g.cell));
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const d = Math.hypot(-g.half + c * g.cell - cx, g.half - r * g.cell - cy);
+        const v = d <= radius ? 1 : d >= reach ? 0 : 1 - (d - radius) / feather;
+        if (v > mask[r * g.res + c]!) mask[r * g.res + c] = v;
+      }
+    }
+  };
+  const line = (points: V2[], radius: number) => {
+    for (let i = 0; i + 1 < points.length; i++) {
+      const [ax, ay] = points[i]!;
+      const [bx, by] = points[i + 1]!;
+      const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 0.8));
+      for (let k = 0; k <= n; k++) disc(ax + ((bx - ax) * k) / n, ay + ((by - ay) * k) / n, radius);
+    }
+  };
+  for (const road of Object.values(layout.roads)) line(road.polyline_xyz_m.map(([x, y]) => [x, y] as V2), road.half_width_m + 1);
+  line(layout.trench.polyline_xy_m, 2.5);
+  line(layout.bridge.abutments_xy_m, 6);
+  for (const site of Object.values(layout.sites)) disc(site.x, site.y, site.radius + 2);
+  for (const structure of layout.structures) {
+    const reach = Math.max(2, ...structure.colliders.map((c) => Math.hypot(c.size_m[0] ?? 0, c.size_m[1] ?? 0) / 2 + Math.hypot(c.center_m[0] - structure.location_m[0], c.center_m[1] - structure.location_m[1])));
+    disc(structure.location_m[0], structure.location_m[1], reach + 1.5);
+  }
+  // 水域：水面遮罩往外 3 m（水面網格與岸邊依原本的高度）
+  const w = src.waterMask;
+  const step = Math.max(1, Math.round(1 / w.cell));
+  for (let r = 0; r < w.res; r += step) {
+    for (let c = 0; c < w.res; c += step) {
+      if (w.at(r, c) > 0.5) disc(-w.half + c * w.cell, w.half - r * w.cell, 1.5, 3);
+    }
+  }
+  const grid = new Grid(mask, g.res, g.size);
+  return (x, y) => grid.sample(x, y);
+}
+
 /** 水域：把水面遮罩切成 8 m 方塊，每塊一個水體（底部到水面），深度超過 1.3 m 為深水。 */
 function waterVolumes(src: ForestSources, block = 8): Array<{ min: V3; max: V3; deep: boolean }> {
   const out: Array<{ min: V3; max: V3; deep: boolean }> = [];
@@ -356,7 +455,7 @@ export async function importForestValley(options: ForestImportOptions): Promise<
   const scene = doc.createScene('ForestValley');
   doc.getRoot().setDefaultScene(scene);
   scene.setExtras({
-    frontline_build: { chunk_size: 125, terrain_chunk_size: 125, stream_distance: 330, lod_distances: [60, 160], shared_library: true },
+    frontline_build: { chunk_size: 125, terrain_chunk_size: 125, stream_distance: 330, lod_distances: [55, 130], shared_library: true },
     source: 'blender-mcp-asset-generator phase1–5',
   });
   const collection = (name: string) => {
@@ -380,6 +479,8 @@ export async function importForestValley(options: ForestImportOptions): Promise<
   const lightingRoot = collection('LIGHTING_Reference');
 
   // ---- 地形 ----
+  log('加上地表起伏與岩層');
+  applyRelief(src, flatMask(src, layout));
   log('產生地形分塊、高度場與底色貼圖');
   const terrain: TerrainSamples = terrainSamples(src.graded);
   const albedo = await terrainAlbedo(src, layout);
@@ -387,6 +488,30 @@ export async function importForestValley(options: ForestImportOptions): Promise<
   const terrainMaterial = doc.createMaterial('M_Terrain').setBaseColorTexture(terrainTexture).setRoughnessFactor(0.95).setMetallicFactor(0);
   addTerrainTiles(doc, env.terrain, terrain, terrainMaterial, 4);
   addHeightfieldNode(doc, collisionRoot, terrain);
+  // 地形細節：前端以 frontline_shader = terrain 換成混合六種掃描貼圖的地形 shader
+  terrainMaterial.setExtras({ frontline_shader: 'terrain' });
+  log('產生地形細節圖層');
+  const layers = await terrainLayers(src, layout);
+  doc.createTexture('T_Terrain_Splat').setImage(layers.splat).setMimeType('image/png');
+  doc.createTexture('T_Terrain_Splat2').setImage(layers.splat2).setMimeType('image/png');
+  doc.createTexture('T_Terrain_Across').setImage(layers.across).setMimeType('image/png');
+  for (const layer of TERRAIN_DETAIL) {
+    for (const kind of ['diff', 'nor_gl'] as const) {
+      const image = readFileSync(join(TERRAIN_TEXTURE_DIR, `${layer.file}_${kind}.jpg`));
+      doc.createTexture(`T_Detail_${layer.name}_${kind === 'diff' ? 'albedo' : 'normal'}`).setImage(image).setMimeType('image/jpeg');
+    }
+  }
+  scene.setExtras({
+    ...scene.getExtras(),
+    frontline_terrain: {
+      splat_texture: 'T_Terrain_Splat',
+      splat2_texture: 'T_Terrain_Splat2',
+      across_texture: 'T_Terrain_Across',
+      layers: TERRAIN_DETAIL.map((l) => ({ name: l.name, albedo: `T_Detail_${l.name}_albedo`, normal: `T_Detail_${l.name}_normal`, tile: l.tile })),
+      origin: [-src.size / 2, -src.size / 2],
+      size: src.size,
+    },
+  });
   const groundAt = (x: number, z: number) => terrainHeightAt(terrain, x, z);
 
   // ---- 匯入 Blender 資產 ----
@@ -528,6 +653,7 @@ export async function importForestValley(options: ForestImportOptions): Promise<
 
   // ---- 植被與岩石實例 ----
   const clearance = makeClearance(layout);
+  const minimapTrees: MinimapTree[] = [];
   const instances: ForestImportReport['instances'] = {};
   const placeSet = (setName: string, set: InstanceSet, cls: AssetClass) => {
     const parent = cls.role === 'ENV_Trees' ? env.trees : cls.role === 'ENV_Rocks' ? env.rocks : env.foliage;
@@ -558,10 +684,13 @@ export async function importForestValley(options: ForestImportOptions): Promise<
           .setScale([round(scale), round(scale), round(scale)]),
       );
       kept++;
+      const crown = MINIMAP_CROWNS[setName];
+      if (crown) minimapTrees.push({ x: position[0], z: position[2], radius: crown.radius * scale, color: crown.color });
       if (cls.collider === 'trunk') {
         const radius = trunkRadius(mesh) * scale * 0.9;
         const b = meshBounds(mesh);
-        const height = (b.max[1] - b.min[1]) * scale * (setName === 'oak' ? 0.35 : 0.6);
+        // 樹幹碰撞只到分枝處：橡樹與楓樹的主幹短、樹冠寬
+        const height = (b.max[1] - b.min[1]) * scale * (setName === 'oak' ? 0.35 : setName === 'maple' ? 0.42 : 0.6);
         const yaw = qYaw((rz * Math.PI) / 180);
         addBox({
           name: `UBX_${asset}_${index}`,
@@ -746,6 +875,11 @@ export async function importForestValley(options: ForestImportOptions): Promise<
       max_speed: round(src.waterScale.maxSpeed, 3),
     },
   });
+
+  // ---- 小地圖 ----
+  log('產生小地圖');
+  doc.createTexture('T_Minimap').setImage(await minimapImage(src, terrain, albedo, minimapTrees)).setMimeType('image/jpeg');
+  scene.setExtras({ ...scene.getExtras(), frontline_minimap: { texture: 'T_Minimap', origin: [-src.size / 2, -src.size / 2], size: src.size } });
 
   // ---- 草地密度（前端 GPU 草地系統使用；顏色取地形底色貼圖）----
   log('產生草地密度圖');

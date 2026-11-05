@@ -10,7 +10,7 @@
     ],
     "max": [
       250,
-      172.038,
+      172.128,
       250
     ]
   },
@@ -37,190 +37,190 @@
       "path": "chunks/detail-0-0.glb",
       "bounds": {
         "min": [
-          -256.27,
-          16.15,
-          -255.75
+          -256.73,
+          16.13,
+          -259.74
         ],
         "max": [
           -120.2,
-          113.97,
+          128.46,
           -123.95
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 119308
+      "byteLength": 198112
     },
     {
       "id": "detail-0-1",
       "path": "chunks/detail-0-1.glb",
       "bounds": {
         "min": [
-          -251.08,
-          6.46,
+          -249.17,
+          6.76,
           -129.92
         ],
         "max": [
-          -117.86,
-          63.66,
-          12.09
+          -117.06,
+          58.06,
+          8.72
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 245448
+      "byteLength": 275696
     },
     {
       "id": "detail-0-2",
       "path": "chunks/detail-0-2.glb",
       "bounds": {
         "min": [
-          -255.88,
-          8.14,
-          -9.77
+          -259.19,
+          5.81,
+          -7.61
         ],
         "max": [
-          -113.31,
-          75.26,
-          130.55
+          -114.01,
+          75.3,
+          133.51
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 203148
+      "byteLength": 256344
     },
     {
       "id": "detail-0-3",
       "path": "chunks/detail-0-3.glb",
       "bounds": {
         "min": [
-          -257.02,
-          8.33,
-          116.25
+          -255.35,
+          8.25,
+          116.09
         ],
         "max": [
-          -119.32,
-          103.05,
-          253.46
+          -119.91,
+          107.81,
+          250.44
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 145060
+      "byteLength": 197268
     },
     {
       "id": "detail-1-0",
       "path": "chunks/detail-1-0.glb",
       "bounds": {
         "min": [
-          -128.62,
-          5.44,
-          -259.41
+          -128.05,
+          5.8,
+          -260.54
         ],
         "max": [
-          9.35,
-          65.64,
-          -117.48
+          8.14,
+          65.71,
+          -125.06
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 303304
+      "byteLength": 346884
     },
     {
       "id": "detail-1-1",
       "path": "chunks/detail-1-1.glb",
       "bounds": {
         "min": [
-          -129.55,
+          -131.78,
           2.48,
-          -129.1
+          -132.33
         ],
         "max": [
           37.6,
-          38.29,
-          10.24
+          32.48,
+          5.99
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 260704
+      "byteLength": 298672
     },
     {
       "id": "detail-1-2",
       "path": "chunks/detail-1-2.glb",
       "bounds": {
         "min": [
-          -131.43,
-          2.13,
-          -11.34
+          -132.07,
+          2.31,
+          -7.53
         ],
         "max": [
-          3.08,
-          35.56,
-          134.55
+          7.06,
+          33.52,
+          134.38
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 278736
+      "byteLength": 310924
     },
     {
       "id": "detail-1-3",
       "path": "chunks/detail-1-3.glb",
       "bounds": {
         "min": [
-          -131.75,
-          -2.25,
-          120.05
+          -130.22,
+          -2.24,
+          113.75
         ],
         "max": [
-          -0.02,
-          58.59,
-          249.89
+          1.09,
+          58.4,
+          256.82
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 205584
+      "byteLength": 267096
     },
     {
       "id": "detail-2-0",
       "path": "chunks/detail-2-0.glb",
       "bounds": {
         "min": [
-          -7.75,
-          5.43,
-          -251.52
+          -2.8,
+          5.66,
+          -255.84
         ],
         "max": [
-          130.77,
-          50.01,
-          -122.81
+          130.66,
+          63.99,
+          -119.33
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 179180
+      "byteLength": 242544
     },
     {
       "id": "detail-2-1",
       "path": "chunks/detail-2-1.glb",
       "bounds": {
         "min": [
-          -10.6,
-          -0.11,
-          -133.29
+          -8.91,
+          -0.08,
+          -129.96
         ],
         "max": [
-          133.32,
-          34.71,
+          133.63,
+          35.89,
           7.98
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 446044
+      "byteLength": 485452
     },
     {
       "id": "detail-2-2",
@@ -232,14 +232,14 @@
           -250
         ],
         "max": [
-          131.5,
-          87.4,
+          130.97,
+          89.56,
           250
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 319720
+      "byteLength": 379492
     },
     {
       "id": "detail-2-3",
@@ -247,94 +247,94 @@
       "bounds": {
         "min": [
           -14.48,
-          0.97,
-          117.44
+          1.31,
+          117.4
         ],
         "max": [
-          131.88,
-          57.69,
-          253.21
+          135.98,
+          71.08,
+          252.56
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 306128
+      "byteLength": 372484
     },
     {
       "id": "detail-3-0",
       "path": "chunks/detail-3-0.glb",
       "bounds": {
         "min": [
-          117.61,
-          9.82,
-          -257.04
+          113.13,
+          9.75,
+          -257.56
         ],
         "max": [
-          255.88,
-          91.86,
-          -121.71
+          257.82,
+          96.83,
+          -113.18
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 151336
+      "byteLength": 228712
     },
     {
       "id": "detail-3-1",
       "path": "chunks/detail-3-1.glb",
       "bounds": {
         "min": [
-          115.02,
-          5.17,
-          -128.27
+          116.8,
+          4.98,
+          -131.28
         ],
         "max": [
-          258.34,
-          80.58,
-          4.61
+          259.27,
+          90.07,
+          10.59
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 169976
+      "byteLength": 247944
     },
     {
       "id": "detail-3-2",
       "path": "chunks/detail-3-2.glb",
       "bounds": {
         "min": [
-          116.42,
-          2.11,
-          -5.41
+          115.26,
+          1.48,
+          -7.34
         ],
         "max": [
-          255.47,
-          103.25,
-          129.34
+          257.77,
+          105.9,
+          133.84
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 191392
+      "byteLength": 238940
     },
     {
       "id": "detail-3-3",
       "path": "chunks/detail-3-3.glb",
       "bounds": {
         "min": [
-          120.32,
-          3.99,
-          121.72
+          114.51,
+          4.06,
+          121.21
         ],
         "max": [
-          255.57,
-          103.74,
-          255.73
+          255.76,
+          109.49,
+          257.68
         ]
       },
       "priority": 1,
       "streamDistance": 330,
-      "byteLength": 148744
+      "byteLength": 211644
     },
     {
       "id": "terrain-0-0",
@@ -342,17 +342,17 @@
       "bounds": {
         "min": [
           -250,
-          14.06,
+          13.96,
           -250
         ],
         "max": [
           -125,
-          112.04,
+          112.13,
           -125
         ]
       },
       "priority": 0,
-      "byteLength": 181900
+      "byteLength": 191904
     },
     {
       "id": "terrain-0-1",
@@ -365,12 +365,12 @@
         ],
         "max": [
           -125,
-          63.86,
+          63.65,
           0
         ]
       },
       "priority": 0,
-      "byteLength": 175940
+      "byteLength": 182876
     },
     {
       "id": "terrain-0-2",
@@ -378,17 +378,17 @@
       "bounds": {
         "min": [
           -250,
-          6.25,
+          6.28,
           0
         ],
         "max": [
           -125,
-          73.71,
+          74.39,
           125
         ]
       },
       "priority": 0,
-      "byteLength": 175976
+      "byteLength": 184644
     },
     {
       "id": "terrain-0-3",
@@ -396,17 +396,17 @@
       "bounds": {
         "min": [
           -250,
-          8.39,
+          8.4,
           125
         ],
         "max": [
           -125,
-          89.3,
+          89.29,
           250
         ]
       },
       "priority": 0,
-      "byteLength": 182148
+      "byteLength": 193576
     },
     {
       "id": "terrain-1-0",
@@ -419,12 +419,12 @@
         ],
         "max": [
           0,
-          70.9,
+          71.21,
           -125
         ]
       },
       "priority": 0,
-      "byteLength": 167792
+      "byteLength": 172252
     },
     {
       "id": "terrain-1-1",
@@ -437,12 +437,12 @@
         ],
         "max": [
           0,
-          28.4,
+          28.95,
           0
         ]
       },
       "priority": 0,
-      "byteLength": 173308
+      "byteLength": 176352
     },
     {
       "id": "terrain-1-2",
@@ -455,12 +455,12 @@
         ],
         "max": [
           0,
-          22.95,
+          23.11,
           125
         ]
       },
       "priority": 0,
-      "byteLength": 167944
+      "byteLength": 171776
     },
     {
       "id": "terrain-1-3",
@@ -473,12 +473,12 @@
         ],
         "max": [
           0,
-          59.03,
+          58.89,
           250
         ]
       },
       "priority": 0,
-      "byteLength": 170372
+      "byteLength": 176728
     },
     {
       "id": "terrain-2-0",
@@ -491,12 +491,12 @@
         ],
         "max": [
           125,
-          45.12,
+          44.8,
           -125
         ]
       },
       "priority": 0,
-      "byteLength": 171512
+      "byteLength": 178348
     },
     {
       "id": "terrain-2-1",
@@ -509,12 +509,12 @@
         ],
         "max": [
           125,
-          28.05,
+          28.39,
           0
         ]
       },
       "priority": 0,
-      "byteLength": 167056
+      "byteLength": 170024
     },
     {
       "id": "terrain-2-2",
@@ -527,12 +527,12 @@
         ],
         "max": [
           125,
-          67.26,
+          67.13,
           125
         ]
       },
       "priority": 0,
-      "byteLength": 174720
+      "byteLength": 179596
     },
     {
       "id": "terrain-2-3",
@@ -545,12 +545,12 @@
         ],
         "max": [
           125,
-          54.85,
+          54.2,
           250
         ]
       },
       "priority": 0,
-      "byteLength": 169608
+      "byteLength": 175392
     },
     {
       "id": "terrain-3-0",
@@ -558,17 +558,17 @@
       "bounds": {
         "min": [
           125,
-          9.8,
+          9.88,
           -250
         ],
         "max": [
           250,
-          75.69,
+          75.85,
           -125
         ]
       },
       "priority": 0,
-      "byteLength": 180248
+      "byteLength": 194140
     },
     {
       "id": "terrain-3-1",
@@ -576,17 +576,17 @@
       "bounds": {
         "min": [
           125,
-          5.5,
+          5.44,
           -125
         ],
         "max": [
           250,
-          67.1,
+          67.64,
           0
         ]
       },
       "priority": 0,
-      "byteLength": 179368
+      "byteLength": 187636
     },
     {
       "id": "terrain-3-2",
@@ -594,17 +594,17 @@
       "bounds": {
         "min": [
           125,
-          5.16,
+          4.92,
           0
         ],
         "max": [
           250,
-          91.11,
+          91.19,
           125
         ]
       },
       "priority": 0,
-      "byteLength": 182060
+      "byteLength": 195100
     },
     {
       "id": "terrain-3-3",
@@ -612,23 +612,23 @@
       "bounds": {
         "min": [
           125,
-          4.52,
+          4.55,
           125
         ],
         "max": [
           250,
-          92.96,
+          93.03,
           250
         ]
       },
       "priority": 0,
-      "byteLength": 180384
+      "byteLength": 192908
     }
   ],
   "collision": "collision.json",
   "library": {
     "path": "library.glb",
-    "byteLength": 1426780
+    "byteLength": 2303016
   },
   "water": {
     "flowMap": "textures/T_Water_Flow-6de1a7bd8d.png",
@@ -642,8 +642,64 @@
     "maxSpeed": 1.692
   },
   "grass": {
-    "densityMap": "textures/T_Grass_Density-ed0d0cb44a.png",
-    "colorMap": "textures/T_Terrain_Albedo-74910eb66a.jpg",
+    "densityMap": "textures/T_Grass_Density-c61b0ebf58.png",
+    "colorMap": "textures/T_Terrain_Albedo-134e98d953.jpg",
+    "origin": [
+      -250,
+      -250
+    ],
+    "size": 500
+  },
+  "terrain": {
+    "splatMap": "textures/T_Terrain_Splat-2231f7021f.png",
+    "splat2Map": "textures/T_Terrain_Splat2-a3a126dc31.png",
+    "acrossMap": "textures/T_Terrain_Across-a6b97f3d95.png",
+    "layers": [
+      {
+        "name": "grass",
+        "albedo": "textures/T_Detail_grass_albedo-f422280a65.jpg",
+        "normal": "textures/T_Detail_grass_normal-62d01100c8.jpg",
+        "tile": 2
+      },
+      {
+        "name": "forest",
+        "albedo": "textures/T_Detail_forest_albedo-d0f79afd3d.jpg",
+        "normal": "textures/T_Detail_forest_normal-56106e281d.jpg",
+        "tile": 2.14
+      },
+      {
+        "name": "rock",
+        "albedo": "textures/T_Detail_rock_albedo-07e177527f.jpg",
+        "normal": "textures/T_Detail_rock_normal-e467d111ab.jpg",
+        "tile": 4
+      },
+      {
+        "name": "road",
+        "albedo": "textures/T_Detail_road_albedo-287e460526.jpg",
+        "normal": "textures/T_Detail_road_normal-bbf936ccad.jpg",
+        "tile": 2.17
+      },
+      {
+        "name": "gravel",
+        "albedo": "textures/T_Detail_gravel_albedo-f19a4e1307.jpg",
+        "normal": "textures/T_Detail_gravel_normal-0144329f34.jpg",
+        "tile": 1.81
+      },
+      {
+        "name": "mud",
+        "albedo": "textures/T_Detail_mud_albedo-a9d0ac9f54.jpg",
+        "normal": "textures/T_Detail_mud_normal-2b7273f91a.jpg",
+        "tile": 2.35
+      }
+    ],
+    "origin": [
+      -250,
+      -250
+    ],
+    "size": 500
+  },
+  "minimap": {
+    "image": "textures/T_Minimap-151087f8ee.jpg",
     "origin": [
       -250,
       -250
@@ -6062,7 +6118,7 @@
   ],
   "source": {
     "file": "../../blender-source/exports/forest-valley.glb",
-    "generatedAt": "2026-11-04T13:58:58.022Z",
+    "generatedAt": "2026-11-05T15:22:24.889Z",
     "generator": "@frontline/map-build"
   }
 }

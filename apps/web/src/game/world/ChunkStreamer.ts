@@ -355,7 +355,8 @@ export class ChunkStreamer {
         }
         if (o instanceof THREE.Mesh) {
           const transparent = Array.isArray(o.material) ? o.material.some((m) => m.transparent) : o.material.transparent;
-          o.userData.castShadow = !terrain && !transparent;
+          // LOD1 以後只在遠處使用，已超出陰影範圍（約 70 m）；不投影可省下整組遠景樹在陰影 pass 的頂點運算
+          o.userData.castShadow = !terrain && !transparent && lodLevelOf(o) === 0;
           o.castShadow = this.shadows.cast && o.userData.castShadow === true;
           o.receiveShadow = !transparent;
         }
@@ -474,6 +475,15 @@ function prepareFoliage(parts: LibraryPart[]): void {
   }
 }
 
+/** 物件（或多 primitive 時的父節點）的 lod_level；沒有 LOD 的物件視為 0。 */
+function lodLevelOf(o: THREE.Object3D): number {
+  for (let p: THREE.Object3D | null = o; p; p = p.parent) {
+    const level = (p.userData as { lod_level?: unknown }).lod_level;
+    if (typeof level === 'number') return level;
+  }
+  return 0;
+}
+
 function horizontalDistanceToBox(box: THREE.Box3, p: THREE.Vector3): number {
   const dx = Math.max(box.min.x - p.x, 0, p.x - box.max.x);
   const dz = Math.max(box.min.z - p.z, 0, p.z - box.max.z);
@@ -508,6 +518,8 @@ function distributeInstances(lod: InstancedLod, focus: THREE.Vector3, scale: num
     level.attr.needsUpdate = true;
     for (const mesh of level.meshes) {
       mesh.count = counts[i]!;
+      // 這一層沒有實例時不畫，省下 draw call
+      mesh.visible = counts[i]! > 0;
     }
     visible += counts[i]!;
   });
